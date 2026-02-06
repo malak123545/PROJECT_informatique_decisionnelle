@@ -41,9 +41,7 @@ public class ReviewDAO {
             ResultSet rs = pstmt.executeQuery();
 
             if (rs.next()) {
-                Review review = extractReviewFromResultSet(rs);
-                rs.close();
-                return review;
+                return extractReviewFromResultSet(rs);
             }
 
         } catch (SQLException e) {
@@ -51,7 +49,28 @@ public class ReviewDAO {
             e.printStackTrace();
         }
 
+
         return null;
+    }
+
+    /**
+     * Compter le nombre de reviews d'un utilisateur
+     */
+    public static int getUserReviewCount(Connection conn) {
+        String query = "SELECT COUNT(DISTINCT user_id) FROM yelp.review";
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(query)) {
+
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+
+        } catch (SQLException e) {
+            System.err.println("Erreur lors du comptage des reviews!");
+            e.printStackTrace();
+        }
+
+        return 0;
     }
 
     /**
@@ -69,8 +88,6 @@ public class ReviewDAO {
                 Review review = extractReviewFromResultSet(rs);
                 reviews.add(review);
             }
-
-            rs.close();
 
         } catch (SQLException e) {
             System.err.println("Erreur lors de la récupération des reviews!");
@@ -95,8 +112,6 @@ public class ReviewDAO {
                 Review review = extractReviewFromResultSet(rs);
                 reviews.add(review);
             }
-
-            rs.close();
 
         } catch (SQLException e) {
             System.err.println("Erreur lors de la récupération des reviews!");

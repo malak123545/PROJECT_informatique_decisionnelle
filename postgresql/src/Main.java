@@ -86,6 +86,37 @@ public class Main {
                 }
             }
 
+            // Test 6: Compter les utilisateurs qui ont au moins une review
+            System.out.println("========================================");
+            System.out.println("6. NOMBRE D'UTILISATEURS AVEC AU MOINS UNE REVIEW");
+            System.out.println("========================================");
+            int usersWithReviewsCount = ReviewDAO.getUserReviewCount(conn);
+            System.out.println("Nombre d'utilisateurs distincts ayant fait des reviews: " + usersWithReviewsCount + "\n");
+
+            // Test 7: Compter le nombre total d'utilisateurs
+            System.out.println("========================================");
+            System.out.println("7. NOMBRE TOTAL D'UTILISATEURS");
+            System.out.println("========================================");
+            int totalUsersCount = UserDAO.getUserCount(conn);
+            System.out.println("Nombre total d'utilisateurs: " + totalUsersCount + "\n");
+
+            // Test 8: Compter les utilisateurs sans reviews
+            System.out.println("========================================");
+            System.out.println("8. NOMBRE D'UTILISATEURS SANS REVIEWS");
+            System.out.println("========================================");
+            int usersWithoutReviewsCount = UserDAO.getUserCountWithoutReview(conn);
+            System.out.println("Nombre d'utilisateurs sans reviews: " + usersWithoutReviewsCount + "\n");
+
+            // Test 9: Les 10 utilisateurs avec le plus de reviews
+            System.out.println("========================================");
+            System.out.println("9. TOP 10 UTILISATEURS AVEC LE PLUS DE REVIEWS");
+            System.out.println("========================================");
+            List<User> topUsers = UserDAO.getTopUsersByReviewCount(conn, 10);
+            for (User user : topUsers) {
+                System.out.println(user);
+            }
+            System.out.println("Nombre d'utilisateurs récupérés: " + topUsers.size());
+
             System.out.println("\n===== FIN DES TESTS =====");
 
             // Fermer la connexion

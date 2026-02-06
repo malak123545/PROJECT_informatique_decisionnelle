@@ -1,7 +1,9 @@
 #!/bin/bash
 
-# Initialiser SDKMAN
-source "$HOME/.sdkman/bin/sdkman-init.sh"
+# Initialiser SDKMAN si disponible
+if [ -f "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
+    source "$HOME/.sdkman/bin/sdkman-init.sh"
+fi
 
 # Aller dans le répertoire du projet
 cd "$(dirname "$0")"
@@ -12,7 +14,7 @@ echo "Compilation du projet..."
 mkdir -p bin
 
 # Compiler tous les fichiers Java
-javac -cp ".:../postgresql-42.7.1.jar" -d bin \
+javac -cp ".:postgresql-42.7.1.jar" -d bin \
     src/model/*.java \
     src/dao/*.java \
     src/connexion.java \
@@ -22,8 +24,7 @@ if [ $? -eq 0 ]; then
     echo "✓ Compilation réussie!"
     echo ""
     echo "Pour exécuter le programme:"
-    echo "  cd bin"
-    echo "  java -cp \".:../../postgresql-42.7.1.jar\" Main"
+    echo "  ./run.sh"
 else
     echo "✗ Erreur de compilation!"
     exit 1
