@@ -210,16 +210,7 @@ CREATE TABLE DIM_USER_ELITE (
     id_elite            NUMBER(10)      PRIMARY KEY,
     user_id             VARCHAR2(255)   REFERENCES FAIT_USER(user_id),
     nbr_elite_years     NUMBER(10),
-    elite_2015          NUMBER(1),
-    elite_2016          NUMBER(1),
-    elite_2017          NUMBER(1),
-    elite_2018          NUMBER(1),
-    elite_2019          NUMBER(1),
-    elite_2020          NUMBER(1),
-    elite_2021          NUMBER(1),
-    elite_2022          NUMBER(1),
-    elite_2023          NUMBER(1),
-    elite_2024          NUMBER(1)
+    derniere_annee_elite NUMBER(4)
 );
 
 -- Reviews (1-to-many avec user | id_review comme PK numerique)
