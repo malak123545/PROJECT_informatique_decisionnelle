@@ -6,12 +6,13 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.expressions.Window
 
 case class BusinessETLResult(
-  businessDF:      DataFrame,
-  hoursDF:         DataFrame,
-  attributesDF:    DataFrame,
-  parkingDF:       DataFrame,
-  businessTypesDF: DataFrame,
-  categoriesDF:    DataFrame  // normalisé : (business_id, category)
+  businessDF:      DataFrame,  // FAIT_BUSINESS
+  localisationDF:  DataFrame,  // DIM_LOCALISATION (new)
+  hoursDF:         DataFrame,  // DIM_HORAIRE (business_id key, split opening/closing)
+  attributesDF:    DataFrame,  // extra (hors schema Oracle)
+  parkingDF:       DataFrame,  // DIM_PARKING (business_id key, paid ajouté)
+  businessTypesDF: DataFrame,  // DIM_TYPE_BUSINESS (type_id, type_name)
+  categoriesDF:    DataFrame   // DIM_CATEGORIE (categorie_id, business_id, categorie_name)
 )
 
 object BusinessETL {
@@ -22,27 +23,61 @@ object BusinessETL {
     val raw = spark.read.json(inputPath)
 
     // ========================
-    // 1. HOURS
+    // 1. DIM_LOCALISATION — 1 ligne par business
+    // Colonnes Oracle : localisation_id, city, state, postal_code, address, latitude, longitude
     // ========================
-    val hoursMapping = raw
-      .filter(col("hours").isNotNull)
-      .select("business_id")
-      .withColumn("hours_id", monotonically_increasing_id())
-
-    val hoursDF = raw
-      .filter(col("hours").isNotNull)
-      .select("business_id", "hours.*")
-      .join(hoursMapping, Seq("business_id"))
+    val localisationWithBiz = raw
       .select(
-        col("hours_id"),
-        col("Monday").as("monday"),    col("Tuesday").as("tuesday"),
-        col("Wednesday").as("wednesday"), col("Thursday").as("thursday"),
-        col("Friday").as("friday"),    col("Saturday").as("saturday"),
-        col("Sunday").as("sunday")
+        col("business_id"),
+        col("city"),
+        col("state"),
+        col("postal_code"),
+        col("address"),
+        col("latitude"),
+        col("longitude")
       )
+      .withColumn("localisation_id", monotonically_increasing_id())
+
+    val localisationMapping = localisationWithBiz.select("business_id", "localisation_id")
+
+    val localisationDF = localisationWithBiz.select(
+      col("localisation_id"),
+      col("city"),
+      col("state"),
+      col("postal_code"),
+      col("address"),
+      col("latitude"),
+      col("longitude")
+    )
 
     // ========================
-    // 2. ATTRIBUTES
+    // 2. DIM_HORAIRE — business_id comme clé, split opening/closing
+    // Colonnes Oracle : business_id, {day}_opening, {day}_closing pour chaque jour
+    // ========================
+    val days = Seq("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+    val hoursBase = raw
+      .filter(col("hours").isNotNull)
+      .select(Seq(col("business_id")) ++ days.map(d => col(s"hours.$d").as(d.toLowerCase)): _*)
+
+    val hoursDF = days.foldLeft(hoursBase) { (df, day) =>
+      val d = day.toLowerCase
+      df.withColumn(s"${d}_opening", split(col(d), "-").getItem(0))
+        .withColumn(s"${d}_closing", split(col(d), "-").getItem(1))
+        .drop(d)
+    }.select(
+      col("business_id"),
+      col("monday_opening"),    col("monday_closing"),
+      col("tuesday_opening"),   col("tuesday_closing"),
+      col("wednesday_opening"), col("wednesday_closing"),
+      col("thursday_opening"),  col("thursday_closing"),
+      col("friday_opening"),    col("friday_closing"),
+      col("saturday_opening"),  col("saturday_closing"),
+      col("sunday_opening"),    col("sunday_closing")
+    )
+
+    // ========================
+    // 3. ATTRIBUTES (extra, hors schema Oracle, conservé pour info)
     // ========================
     val attributesMapping = raw
       .filter(col("attributes").isNotNull)
@@ -59,7 +94,8 @@ object BusinessETL {
       )
 
     // ========================
-    // 3. PARKING (extrait des attributes)
+    // 4. DIM_PARKING — business_id comme clé PK, paid ajouté à 0
+    // Colonnes Oracle : business_id, garage, street, lot, paid, validated, valet
     // ========================
     val parkingSchema = StructType(Seq(
       StructField("garage",    BooleanType),
@@ -69,56 +105,47 @@ object BusinessETL {
       StructField("valet",     BooleanType)
     ))
 
-    // Le champ est un dict Python-style : {'garage': True, ...} → on normalise en JSON
     val toPythonJson = udf((s: String) =>
       if (s == null || s.trim == "None") null
       else s.replace("True", "true").replace("False", "false")
              .replace("None", "null").replace("'", "\"")
     )
 
-    val parkingMapping = raw
-      .filter(col("attributes.BusinessParking").isNotNull &&
-              col("attributes.BusinessParking") =!= "None")
-      .select("business_id")
-      .withColumn("parking_id", monotonically_increasing_id())
-
     val parkingDF = raw
       .filter(col("attributes.BusinessParking").isNotNull &&
               col("attributes.BusinessParking") =!= "None")
       .select(col("business_id"), col("attributes.BusinessParking").as("parking_raw"))
-      .withColumn("parking_parsed",
-        from_json(toPythonJson(col("parking_raw")), parkingSchema))
-      .join(parkingMapping, Seq("business_id"))
+      .withColumn("parking_parsed", from_json(toPythonJson(col("parking_raw")), parkingSchema))
       .select(
-        col("parking_id"),
-        col("parking_parsed.garage").as("garage"),
-        col("parking_parsed.street").as("street"),
-        col("parking_parsed.validated").as("validated"),
-        col("parking_parsed.lot").as("lot"),
-        col("parking_parsed.valet").as("valet")
+        col("business_id"),
+        col("parking_parsed.garage").cast("int").as("garage"),
+        col("parking_parsed.street").cast("int").as("street"),
+        col("parking_parsed.lot").cast("int").as("lot"),
+        lit(0).as("paid"),          // non disponible dans Yelp, défaut 0
+        col("parking_parsed.validated").cast("int").as("validated"),
+        col("parking_parsed.valet").cast("int").as("valet")
       )
 
     // ========================
-    // 4. CATEGORIES (normalisées — 1 ligne par business/catégorie)
+    // 5. DIM_CATEGORIE — categorie_id (PK), business_id (FK), categorie_name
+    // Colonnes Oracle : categorie_id, business_id, categorie_name
     // ========================
     val categoriesExploded = raw
       .filter(col("categories").isNotNull)
-      .withColumn("category", explode(split(col("categories"), ", ")))
-      .select("business_id", "category")
+      .withColumn("categorie_name", explode(split(col("categories"), ", ")))
+      .select("business_id", "categorie_name")
 
-    // Statistiques sur les catégories
-    val catCounts = categoriesExploded
-      .groupBy("business_id").agg(count("*").as("cat_count"))
-    val maxRow = catCounts.orderBy(desc("cat_count")).head()
-    val maxCats = maxRow.getLong(1)
-    val maxBizId = maxRow.getString(0)
-
-    println(s"  Nombre max de catégories par business : $maxCats (business_id = $maxBizId)")
+    val catCounts = categoriesExploded.groupBy("business_id").agg(count("*").as("cat_count"))
+    val maxRow    = catCounts.orderBy(desc("cat_count")).head()
+    println(s"  Nombre max de catégories par business : ${maxRow.getLong(1)} (business_id = ${maxRow.getString(0)})")
 
     val categoriesDF = categoriesExploded
+      .withColumn("categorie_id", monotonically_increasing_id())
+      .select("categorie_id", "business_id", "categorie_name")
 
     // ========================
-    // 5. BUSINESS TYPES (type dominant par business)
+    // 6. DIM_TYPE_BUSINESS — type_id (PK), type_name
+    // Colonnes Oracle : type_id, type_name
     // ========================
     val typePatterns = Map(
       "Restaurant"  -> "(?i).*(restaurant|food|cuisine|diner|bistro|eatery).*",
@@ -134,7 +161,7 @@ object BusinessETL {
     )
 
     val dominantType = categoriesExploded
-      .withColumn("business_type", classifyUDF(col("category")))
+      .withColumn("business_type", classifyUDF(col("categorie_name")))
       .filter(col("business_type") =!= "Other")
       .groupBy("business_id", "business_type")
       .agg(count("*").as("type_count"))
@@ -146,59 +173,57 @@ object BusinessETL {
 
     val businessTypesDF = dominantType
       .select("business_type").distinct()
-      .withColumn("business_type_id", monotonically_increasing_id())
-      .select("business_type_id", "business_type")
+      .withColumn("type_id", monotonically_increasing_id())
+      .select(col("type_id"), col("business_type").as("type_name"))
 
     val businessTypesMapped = dominantType
-      .join(businessTypesDF, Seq("business_type"))
-      .select("business_id", "business_type_id")
+      .join(businessTypesDF.withColumnRenamed("type_name", "business_type"), Seq("business_type"))
+      .select("business_id", "type_id")
 
     // ========================
-    // 6. BUSINESS PRINCIPAL (avec toutes les FK)
+    // 7. FAIT_BUSINESS — localisation_id et type_id comme FKs
+    // Colonnes Oracle : business_id, name, is_open, localisation_id, type_id, stars, review_count
     // ========================
     val businessDF = raw
       .select(
-        col("business_id"), col("name"), col("address"),
-        col("city"), col("state"), col("postal_code"),
-        col("latitude"), col("longitude"),
-        col("stars"), col("review_count"), col("is_open"),
-        when(col("attributes.RestaurantsReservations") === "True", lit(true))
-          .otherwise(lit(false)).as("reservations")
+        col("business_id"),
+        col("name"),
+        col("is_open"),
+        col("stars"),
+        col("review_count")
       )
-      .join(hoursMapping,      Seq("business_id"), "left")
-      .join(attributesMapping, Seq("business_id"), "left")
-      .join(parkingMapping,    Seq("business_id"), "left")
+      .join(localisationMapping, Seq("business_id"), "left")
       .join(businessTypesMapped, Seq("business_id"), "inner") // inner = filtre les sans-type
       .select(
-        col("business_id"), col("name"), col("address"),
-        col("city"), col("state"), col("postal_code"),
-        col("latitude"), col("longitude"),
-        col("stars"), col("review_count"), col("is_open"), col("reservations"),
-        col("hours_id"), col("attributes_id"), col("parking_id"), col("business_type_id")
+        col("business_id"),
+        col("name"),
+        col("is_open"),
+        col("localisation_id"),
+        col("type_id"),
+        col("stars"),
+        col("review_count")
       )
 
-    // Filtrage en cascade (ne garder que les enregistrements référencés)
-    val validIds        = businessDF.select("business_id")
-    val validHoursIds   = businessDF.select("hours_id").filter(col("hours_id").isNotNull).distinct()
-    val validAttrIds    = businessDF.select("attributes_id").filter(col("attributes_id").isNotNull).distinct()
-    val validParkingIds = businessDF.select("parking_id").filter(col("parking_id").isNotNull).distinct()
+    // Filtrage en cascade
+    val validBizIds = businessDF.select("business_id")
+    val validLocIds = businessDF.select("localisation_id").filter(col("localisation_id").isNotNull).distinct()
 
-    val hoursDFf      = hoursDF.join(validHoursIds,   Seq("hours_id"),      "inner")
-    val attributesDFf = attributesDF.join(validAttrIds,  Seq("attributes_id"), "inner")
-    val parkingDFf    = parkingDF.join(validParkingIds, Seq("parking_id"),    "inner")
-    val categoriesDFf = categoriesDF.join(validIds,      Seq("business_id"),   "inner")
+    val localisationDFf = localisationDF.join(validLocIds, Seq("localisation_id"), "inner")
+    val hoursDFf        = hoursDF.join(validBizIds,        Seq("business_id"),     "inner")
+    val parkingDFf      = parkingDF.join(validBizIds,      Seq("business_id"),     "inner")
+    val categoriesDFf   = categoriesDF.join(validBizIds,   Seq("business_id"),     "inner")
 
     println(s"\n=== BusinessETL — Statistiques ===")
-    println(s"Business (avec type) : ${businessDF.count()}")
-    println(s"Hours                : ${hoursDFf.count()}")
-    println(s"Attributes           : ${attributesDFf.count()}")
-    println(s"Parking              : ${parkingDFf.count()}")
-    println(s"Types distincts      : ${businessTypesDF.count()}")
+    println(s"Business (avec type)  : ${businessDF.count()}")
+    println(s"Localisations         : ${localisationDFf.count()}")
+    println(s"Horaires              : ${hoursDFf.count()}")
+    println(s"Parking               : ${parkingDFf.count()}")
+    println(s"Types distincts       : ${businessTypesDF.count()}")
 
     println("\nDistribution des types :")
-    businessDF.join(businessTypesDF, Seq("business_type_id"))
-      .groupBy("business_type").count().orderBy(desc("count")).show()
+    businessDF.join(businessTypesDF, Seq("type_id"))
+      .groupBy("type_name").count().orderBy(desc("count")).show()
 
-    BusinessETLResult(businessDF, hoursDFf, attributesDFf, parkingDFf, businessTypesDF, categoriesDFf)
+    BusinessETLResult(businessDF, localisationDFf, hoursDFf, attributesDF, parkingDFf, businessTypesDF, categoriesDFf)
   }
 }

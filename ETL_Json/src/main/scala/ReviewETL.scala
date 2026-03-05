@@ -21,11 +21,11 @@ object ReviewETL {
         col("user_id"),
         col("business_id"),
         col("stars"),
-        col("useful"),
-        col("funny"),
-        col("cool"),
+        col("useful").as("nbr_useful"),
+        col("funny").as("nbr_funny"),
+        col("cool").as("nbr_cool"),
         col("text"),
-        col("date").cast("timestamp").as("review_date")
+        col("date").cast("timestamp").as("date_review")
       )
       // Ne garder que les reviews pointant vers un business valide
       .join(
@@ -33,6 +33,8 @@ object ReviewETL {
         Seq("business_id"),
         "inner"
       )
+      // Ne garder que les reviews avec au moins 1 vote utile
+      .filter(col("nbr_useful") > 0)
 
     println(s"\n=== ReviewETL — Statistiques ===")
     println(s"Reviews brutes          : ${raw.count()}")
@@ -40,7 +42,7 @@ object ReviewETL {
 
     val statsRow = reviewDF.agg(
       avg("stars").as("avg_stars"),
-      avg("useful").as("avg_useful")
+      avg("nbr_useful").as("avg_useful")
     ).collect()(0)
     println(f"Moyenne stars  : ${statsRow.getDouble(0)}%.2f")
     println(f"Moyenne useful : ${statsRow.getDouble(1)}%.2f")

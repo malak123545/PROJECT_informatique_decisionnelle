@@ -84,9 +84,12 @@ object DataMart02ETL {
     val userDF = readCsv("users.csv")
     println("[EXTRACT] ✓ users.csv lu")
 
-    // review_date dans le CSV → renommé en date pour compatibilité avec clean()
+    // date_review dans le CSV → renommé en date pour compatibilité avec clean()
     val reviewDF = readCsv("reviews.csv")
-      .withColumnRenamed("review_date", "date")
+      .withColumnRenamed("date_review", "date")
+      .withColumnRenamed("nbr_useful", "useful")
+      .withColumnRenamed("nbr_funny",  "funny")
+      .withColumnRenamed("nbr_cool",   "cool")
     println("[EXTRACT] ✓ reviews.csv lu")
 
     // user_elite.csv est en format pivot (user_id, elite_2004, elite_2005, ...)
@@ -101,9 +104,9 @@ object DataMart02ETL {
     }.reduce(_.union(_))
     println(s"[EXTRACT] ✓ user_elite.csv dépivote (${yearCols.length} années)")
 
-    // tip_date dans le CSV → renommé en date pour compatibilité avec clean()
+    // date_tip dans le CSV → renommé en date pour compatibilité avec clean()
     val tipDF = readCsv("tips.csv")
-      .withColumnRenamed("tip_date", "date")
+      .withColumnRenamed("date_tip", "date")
     println("[EXTRACT] ✓ tips.csv lu")
 
     Map("user" -> userDF, "review" -> reviewDF, "elite" -> eliteDF, "tip" -> tipDF)
@@ -115,7 +118,7 @@ object DataMart02ETL {
       .na.fill(0,         Seq("review_count", "fans", "average_stars"))
       .na.fill("unknown", Seq("name"))
       .filter(col("yelping_since").isNotNull)
-      .filter(col("review_count") >= 0)
+      .filter(col("review_count") > 0)
       .filter(col("fans") >= 0)
       .filter(col("yelping_since") >= lit("2004-01-01"))
       .filter(col("average_stars").between(0.0, 5.0))
@@ -128,7 +131,7 @@ object DataMart02ETL {
       .na.fill("unknown", Seq("text"))
       .filter(col("date").isNotNull)
       .withColumn("stars", when(col("stars").between(1.0, 5.0), col("stars")).otherwise(lit(0)))
-      .filter(col("useful") >= 0)
+      .filter(col("useful") > 0)
       .filter(col("funny")  >= 0)
       .filter(col("cool")   >= 0)
       .withColumn("review_id",   lower(trim(col("review_id"))))
@@ -145,6 +148,7 @@ object DataMart02ETL {
       .dropDuplicates()
       .filter(col("user_id").isNotNull)
       .filter(col("date").isNotNull)
+      .filter(col("compliment_count") > 0)
       .withColumn("user_id", lower(trim(col("user_id"))))
 
     Map("user" -> cleanUser, "review" -> cleanReview, "elite" -> cleanElite, "tip" -> cleanTip)

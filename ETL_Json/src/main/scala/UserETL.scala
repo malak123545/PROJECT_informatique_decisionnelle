@@ -26,6 +26,7 @@ object UserETL {
     println(s"  Users référencés dans les reviews filtrées : ${validUserIds.count()}")
 
     val rawFiltered = raw.join(validUserIds, Seq("user_id"), "inner")
+      .filter(col("review_count") > 0)
 
     // ========================
     // 1. ELITE (dénormalisé)
@@ -37,18 +38,31 @@ object UserETL {
       .withColumn("elite_year", trim(col("elite_year")))
       .filter(col("elite_year") =!= "")
 
+    // On limite aux années du schema Oracle DIM_USER_ELITE (elite_2015..elite_2024)
+    val oracleEliteRange = (2015 to 2024).map(_.toString).toSet
+
     val eliteYears = eliteExploded
       .select("elite_year").distinct()
       .collect().map(_.getString(0)).sorted
+      .filter(y => oracleEliteRange.contains(y))
 
-    println(s"  Années élite trouvées : ${eliteYears.mkString(", ")}")
+    println(s"  Années élite retenues (2015-2024) : ${eliteYears.mkString(", ")}")
 
+    // DIM_USER_ELITE : id_elite (PK), user_id, nbr_elite_years, elite_YYYY (0/1)
+    // Colonnes Oracle : id_elite, user_id, nbr_elite_years, elite_2015..elite_2024
     val userEliteDF = if (eliteYears.nonEmpty) {
       val eliteCols = eliteYears.map(year =>
-        max(when(col("elite_year") === year, lit(true)).otherwise(lit(false)))
+        sum(when(col("elite_year") === year, lit(1)).otherwise(lit(0)))
           .as(s"elite_$year")
       )
-      eliteExploded.groupBy("user_id").agg(eliteCols.head, eliteCols.tail: _*)
+      eliteExploded
+        .groupBy("user_id")
+        .agg(eliteCols.head, eliteCols.tail: _*)
+        .withColumn("nbr_elite_years",
+          eliteYears.map(y => col(s"elite_$y")).reduce(_ + _))
+        .withColumn("id_elite", monotonically_increasing_id())
+        .select(Seq(col("id_elite"), col("user_id"), col("nbr_elite_years")) ++
+                eliteYears.map(y => col(s"elite_$y")): _*)
     } else {
       spark.createDataFrame(
         spark.sparkContext.emptyRDD[org.apache.spark.sql.Row],
@@ -87,7 +101,10 @@ object UserETL {
 
     val lastEliteYearDF = eliteExploded
       .groupBy("user_id")
-      .agg(max(col("elite_year").cast("int")).as("last_elite_year"))
+      .agg(
+        max(col("elite_year").cast("int")).as("last_elite_year"),
+        count("*").cast("int").as("nb_annees_elite")
+      )
 
     val userDF = rawFiltered
       .select(
@@ -118,6 +135,8 @@ object UserETL {
         when(col("friend_count").isNull, lit(0)).otherwise(col("friend_count")))
       .withColumn("last_elite_year",
         when(col("last_elite_year").isNull, lit(0)).otherwise(col("last_elite_year")))
+      .withColumn("nb_annees_elite",
+        when(col("nb_annees_elite").isNull, lit(0)).otherwise(col("nb_annees_elite")))
 
     println(s"\n=== UserETL — Statistiques ===")
     println(s"Users bruts             : ${raw.count()}")

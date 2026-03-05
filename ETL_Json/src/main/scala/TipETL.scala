@@ -17,19 +17,22 @@ object TipETL {
     val raw = spark.read.json(inputPath)
 
     val tipDF = raw
-      .withColumn("tip_id", monotonically_increasing_id())
+      .withColumn("id_tip", monotonically_increasing_id())
       .select(
-        col("tip_id"),
+        col("id_tip"),                                          // PK Oracle DIM_TIP
         col("user_id"),
+        col("date").cast("timestamp").as("date_tip"),
+        col("compliment_count"),
+        // colonnes hors schema Oracle conservées pour usage interne/DataMart
         col("business_id"),
-        col("text"),
-        col("date").cast("timestamp").as("tip_date"),
-        col("compliment_count")
+        col("text")
       )
       // Filtrer sur les business valides
       .join(validBizDF.select("business_id"),  Seq("business_id"), "inner")
       // Filtrer sur les users valides
       .join(validUserDF.select("user_id"),     Seq("user_id"),     "inner")
+      // Ne garder que les tips avec au moins 1 compliment
+      .filter(col("compliment_count") > 0)
 
     println(s"\n=== TipETL — Statistiques ===")
     println(s"Tips bruts          : ${raw.count()}")

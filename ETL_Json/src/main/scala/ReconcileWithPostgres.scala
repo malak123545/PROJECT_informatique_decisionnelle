@@ -87,8 +87,8 @@ object ReconcileWithPostgres {
     //   review_id, user_id, business_id, stars, useful, funny, cool, text, review_date
     val pgReviewsRaw = readPg("yelp.review")
 
-    // Aligner le nom de colonne date -> review_date
-    val dateCol = if (pgReviewsRaw.columns.contains("review_date")) "review_date" else "date"
+    // Aligner sur le schema Oracle : date → date_review, useful/funny/cool → nbr_useful/nbr_funny/nbr_cool
+    val dateCol = if (pgReviewsRaw.columns.contains("date_review")) "date_review" else "date"
 
     val pgReviews = pgReviewsRaw
       .select(
@@ -96,14 +96,16 @@ object ReconcileWithPostgres {
         col("user_id"),
         col("business_id"),
         col("stars"),
-        col("useful"),
-        col("funny"),
-        col("cool"),
+        col("useful").as("nbr_useful"),
+        col("funny").as("nbr_funny"),
+        col("cool").as("nbr_cool"),
         col("text"),
-        col(dateCol).cast("timestamp").as("review_date")
+        col(dateCol).cast("timestamp").as("date_review")
       )
       // Filtrer sur les business présents dans business.csv
       .join(validBizIds, Seq("business_id"), "inner")
+      // Ne garder que les reviews avec au moins 1 vote utile
+      .filter(col("nbr_useful") > 0)
 
     // Garder uniquement les reviews PG absentes du CSV (par review_id)
     val pgReviewsNew = pgReviews.join(
@@ -141,6 +143,7 @@ object ReconcileWithPostgres {
     val pgUsersWithFriends = pgUsersRaw
       .join(pgFriendCount, Seq("user_id"), "left")
       .withColumn("friend_count", coalesce(col("friend_count"), lit(0L)))
+      .filter(col("review_count") > 0)
 
     // Aligner le schema PG sur le schema CSV
     // Les colonnes encore manquantes (ex: last_elite_year si absente de PG) sont remplies a 0
@@ -204,6 +207,7 @@ object ReconcileWithPostgres {
     // (les valeurs originales Yelp etaient sur l'ensemble non filtre)
     println("\n  Recalcul des stats users depuis les reviews finales...")
     val updatedUsers = updateUserStats(mergedUsers, mergedReviews)
+      .filter(col("review_count") > 0)
     SparkUtils.saveAsCsv(updatedUsers, outputDir, "users")
 
     // Nettoyage
@@ -225,9 +229,9 @@ object ReconcileWithPostgres {
       .agg(
         count("*").cast("int").as("review_count"),
         round(avg("stars"), 2).as("average_stars"),
-        sum("useful").cast("long").as("useful"),
-        sum("funny").cast("long").as("funny"),
-        sum("cool").cast("long").as("cool")
+        sum("nbr_useful").cast("long").as("useful"),
+        sum("nbr_funny").cast("long").as("funny"),
+        sum("nbr_cool").cast("long").as("cool")
       )
 
     usersDF

@@ -1,4 +1,5 @@
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions._
 import org.apache.spark.storage.StorageLevel
 import org.apache.log4j.{Level, Logger}
 import etl._
@@ -32,12 +33,13 @@ object YelpETL {
     println("\n[1/5] BusinessETL...")
     val biz = BusinessETL.process(spark, s"$dataDir/yelp_academic_dataset_business.json")
 
-    // Sous-tables en CSV (pas concernées par le filtrage user)
-    SparkUtils.saveAsCsv(biz.hoursDF,         outputDir, "hours")
-    SparkUtils.saveAsCsv(biz.attributesDF,    outputDir, "attributes")
-    SparkUtils.saveAsCsv(biz.parkingDF,       outputDir, "parking")
-    SparkUtils.saveAsCsv(biz.businessTypesDF, outputDir, "business_types")
-    SparkUtils.saveAsCsv(biz.categoriesDF,    outputDir, "categories")
+    // Sous-tables en CSV (compatibles Oracle, pas concernées par le filtrage user)
+    SparkUtils.saveAsCsv(biz.localisationDF,  outputDir, "localisation")   // DIM_LOCALISATION
+    SparkUtils.saveAsCsv(biz.hoursDF,         outputDir, "hours")          // DIM_HORAIRE
+    SparkUtils.saveAsCsv(biz.attributesDF,    outputDir, "attributes")     // extra
+    SparkUtils.saveAsCsv(biz.parkingDF,       outputDir, "parking")        // DIM_PARKING
+    SparkUtils.saveAsCsv(biz.businessTypesDF, outputDir, "business_types") // DIM_TYPE_BUSINESS
+    SparkUtils.saveAsCsv(biz.categoriesDF,    outputDir, "categories")     // DIM_CATEGORIE
 
     val validBusinessDF = biz.businessDF.select("business_id").cache()
     println(s"  -> ${validBusinessDF.count()} business valides en cache")
@@ -104,6 +106,23 @@ object YelpETL {
       validUserDF
     )
     SparkUtils.saveAsCsv(tipDF, outputDir, "tips")
+
+    // ── DIM_TEMPS — générée depuis les dates de reviews et tips ──
+    // Colonnes Oracle : temps_id, annee, mois, trimestre, jour
+    val reviewDatesDF = reviewsFinalDF.select(col("date_review").as("d"))
+    val tipDatesDF    = tipDF.select(col("date_tip").as("d"))
+    val dimTempsDF    = reviewDatesDF.union(tipDatesDF)
+      .filter(col("d").isNotNull)
+      .select(
+        year(col("d")).as("annee"),
+        month(col("d")).as("mois"),
+        quarter(col("d")).as("trimestre"),
+        dayofmonth(col("d")).as("jour")
+      )
+      .distinct()
+      .withColumn("temps_id", monotonically_increasing_id())
+      .select("temps_id", "annee", "mois", "trimestre", "jour")
+    SparkUtils.saveAsCsv(dimTempsDF, outputDir, "dim_temps")              // DIM_TEMPS
 
     validBusinessDF.unpersist()
     validUserDF.unpersist()
