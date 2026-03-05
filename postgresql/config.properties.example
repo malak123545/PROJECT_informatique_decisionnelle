@@ -1,0 +1,26 @@
+# ═══════════════════════════════════════════════════════════
+# Configuration JDBC pour DataMart02 ETL
+# Copier ce fichier en config.properties et ajuster les valeurs
+# ═══════════════════════════════════════════════════════════
+
+# PostgreSQL Connection
+jdbc.url=jdbc:postgresql://localhost:5432/yelp
+jdbc.user=yelp_user
+jdbc.password=yelp_pass
+jdbc.driver=org.postgresql.Driver
+
+# Spark Configuration
+spark.master=local[*]
+spark.app.name=DataMart02-YelpPertinence
+spark.driver.memory=2g
+spark.executor.memory=2g
+spark.sql.shuffle.partitions=10
+spark.sql.adaptive.enabled=true
+
+# ETL Configuration
+etl.partitions=10
+etl.table.output=yelp.fact_user_pertinence
+etl.mode=overwrite
+
+# Logging
+log.level=WARN
