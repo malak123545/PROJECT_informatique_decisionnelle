@@ -1,3 +1,4 @@
 *.json
 ETL_Json/src/Data/
 ETL_Json/src/output/
+!ETL_Json/src/output/user_filtered.csv
