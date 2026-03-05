@@ -21,6 +21,44 @@
 
 
 -- ============================================================
+-- 0. NETTOYAGE (DROP IF EXISTS - style Oracle)
+-- Suppression dans l'ordre inverse des dependances
+-- ============================================================
+BEGIN
+    -- Vues materialisees
+    FOR v IN (SELECT mview_name FROM user_mviews) LOOP
+        EXECUTE IMMEDIATE 'DROP MATERIALIZED VIEW ' || v.mview_name;
+    END LOOP;
+
+    -- Tables (ordre inverse des dependances)
+    FOR t IN (
+        SELECT table_name FROM user_tables
+        WHERE table_name IN (
+            'FAIT_REVIEW',
+            'DIM_PARKING', 'DIM_HORAIRE', 'DIM_CATEGORIE',
+            'DIM_USER_ELITE', 'DIM_REVIEW', 'DIM_TIP',
+            'FAIT_BUSINESS', 'FAIT_USER',
+            'DIM_LOCALISATION', 'DIM_TYPE_BUSINESS', 'DIM_TEMPS'
+        )
+    ) LOOP
+        EXECUTE IMMEDIATE 'DROP TABLE ' || t.table_name || ' CASCADE CONSTRAINTS';
+    END LOOP;
+
+    -- Sequences
+    FOR s IN (
+        SELECT sequence_name FROM user_sequences
+        WHERE sequence_name IN (
+            'SEQ_LOCALISATION', 'SEQ_TYPE_BUSINESS', 'SEQ_CATEGORIE',
+            'SEQ_TEMPS', 'SEQ_TIP', 'SEQ_ELITE', 'SEQ_REVIEW'
+        )
+    ) LOOP
+        EXECUTE IMMEDIATE 'DROP SEQUENCE ' || s.sequence_name;
+    END LOOP;
+END;
+/
+
+
+-- ============================================================
 -- 1. SEQUENCES
 -- ============================================================
 CREATE SEQUENCE SEQ_LOCALISATION  START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;

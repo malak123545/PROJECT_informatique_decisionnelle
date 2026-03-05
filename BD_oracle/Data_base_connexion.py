@@ -120,6 +120,84 @@ def list_tables(conn, schema: str = None):
     print(f"{'─'*60}\n")
     cursor.close()
 
+def drop_schema(conn):
+    """
+    Supprime tous les objets du schema de l'utilisateur connecté :
+    vues matérialisées, tables (CASCADE), séquences.
+    """
+    cursor = conn.cursor()
+
+    # 1. Supprimer les vues matérialisées
+    cursor.execute("SELECT mview_name FROM user_mviews")
+    mviews = cursor.fetchall()
+    for (mview,) in mviews:
+        try:
+            cursor.execute(f"DROP MATERIALIZED VIEW {mview}")
+            print(f"  ✅ Vue matérialisée supprimée : {mview}")
+        except Exception as e:
+            print(f"  ❌ Erreur vue {mview} : {e}")
+
+    # 2. Supprimer les tables avec CASCADE CONSTRAINTS
+    cursor.execute("SELECT table_name FROM user_tables")
+    tables = cursor.fetchall()
+    for (table,) in tables:
+        try:
+            cursor.execute(f"DROP TABLE {table} CASCADE CONSTRAINTS")
+            print(f"  ✅ Table supprimée : {table}")
+        except Exception as e:
+            print(f"  ❌ Erreur table {table} : {e}")
+
+    # 3. Supprimer les séquences
+    cursor.execute("SELECT sequence_name FROM user_sequences")
+    sequences = cursor.fetchall()
+    for (seq,) in sequences:
+        try:
+            cursor.execute(f"DROP SEQUENCE {seq}")
+            print(f"  ✅ Séquence supprimée : {seq}")
+        except Exception as e:
+            print(f"  ❌ Erreur séquence {seq} : {e}")
+
+    conn.commit()
+    cursor.close()
+    print("\n✅ Schema nettoyé avec succès.")
+    
+def list_columns(conn, tables: list, schema: str = None):
+    """
+    Affiche les colonnes d'une liste de tables.
+    - tables : liste de noms de tables ex: ['FAIT_USER', 'DIM_REVIEW']
+    - schema  : optionnel, ex: 'ma273150'
+    """
+    cursor = conn.cursor()
+    for table_name in tables:
+        if schema:
+            cursor.execute("""
+                SELECT column_name, data_type, data_length, nullable
+                FROM all_tab_columns
+                WHERE owner = :schema
+                AND table_name = :table_name
+                ORDER BY column_id
+            """, schema=schema.upper(), table_name=table_name.upper())
+        else:
+            cursor.execute("""
+                SELECT column_name, data_type, data_length, nullable
+                FROM user_tab_columns
+                WHERE table_name = :table_name
+                ORDER BY column_id
+            """, table_name=table_name.upper())
+
+        rows = cursor.fetchall()
+        print(f"\n{'─'*65}")
+        print(f"  Colonnes de la table : {table_name.upper()}")
+        print(f"{'─'*65}")
+        print(f"{'COLONNE':<30} {'TYPE':<20} {'TAILLE':<10} {'NULL?'}")
+        print(f"{'─'*65}")
+        if rows:
+            for row in rows:
+                print(f"{row[0]:<30} {row[1]:<20} {str(row[2]):<10} {row[3]}")
+        else:
+            print("  ⚠️  Aucune colonne trouvée (table inexistante ?).")
+        print(f"{'─'*65}\n")
+    cursor.close()
 
 # ─── Point d'entrée ────────────────────────────────────────────────────────────
 if __name__ == "__main__":
