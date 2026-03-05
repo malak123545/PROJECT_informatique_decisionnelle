@@ -109,7 +109,14 @@ object YelpETL {
     validUserDF.unpersist()
 
     println("\n" + "=" * 50)
-    println("  Pipeline terminé avec succès !")
+    println("  Phase 1 terminée avec succès !")
+    println("=" * 50)
+
+    // ── PHASE 2 : RÉCONCILIATION CSV ↔ POSTGRESQL ─────────
+    ReconcileWithPostgres.run(spark, outputDir)
+
+    println("\n" + "=" * 50)
+    println("  Pipeline complet terminé avec succès !")
     println("=" * 50)
 
     spark.stop()

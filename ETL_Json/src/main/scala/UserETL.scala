@@ -79,11 +79,15 @@ object UserETL {
       .dropDuplicates()
 
     // ========================
-    // 3. USER PRINCIPAL (avec friend_count calculé depuis la table paires)
+    // 3. USER PRINCIPAL (avec friend_count et last_elite_year calculés)
     // ========================
     val friendCountDF = userFriendsDF
       .groupBy("user_id")
       .agg(count("friend_id").as("friend_count"))
+
+    val lastEliteYearDF = eliteExploded
+      .groupBy("user_id")
+      .agg(max(col("elite_year").cast("int")).as("last_elite_year"))
 
     val userDF = rawFiltered
       .select(
@@ -108,9 +112,12 @@ object UserETL {
         col("compliment_writer"),
         col("compliment_photos")
       )
-      .join(friendCountDF, Seq("user_id"), "left")
+      .join(friendCountDF,    Seq("user_id"), "left")
+      .join(lastEliteYearDF,  Seq("user_id"), "left")
       .withColumn("friend_count",
         when(col("friend_count").isNull, lit(0)).otherwise(col("friend_count")))
+      .withColumn("last_elite_year",
+        when(col("last_elite_year").isNull, lit(0)).otherwise(col("last_elite_year")))
 
     println(s"\n=== UserETL — Statistiques ===")
     println(s"Users bruts             : ${raw.count()}")

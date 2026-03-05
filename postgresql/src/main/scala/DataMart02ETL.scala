@@ -8,12 +8,15 @@ object DataMart02ETL {
   val jdbcPassword = "tpid"
   val jdbcDriver   = "org.postgresql.Driver"
 
-  val outputCsvBasePath = "/home/preconys/Musique/PROJECT_informatique_decisionnelle/datamart02_csv"
-  val tipCsvPath   = "/home/preconys/yelp_academic_dataset_tip.csv"
+  // Chemin vers les CSV produits par la Phase 1 + réconciliation (ETL_Json/src/output/)
+  val defaultInputCsvPath   = "../ETL_Json/src/output"
+  val defaultOutputCsvPath  = "datamart02_csv"
 
   val nbPartitions = 4
 
   def main(args: Array[String]): Unit = {
+    val inputCsvPath      = if (args.length > 0) args(0) else defaultInputCsvPath
+    val outputCsvBasePath = if (args.length > 1) args(1) else defaultOutputCsvPath
     println("═══════════════════════════════════════")
     println("   DATA MART 02 ETL - YELP PERTINENCE")
     println("   Schéma en étoile -> CSV")
@@ -35,7 +38,7 @@ object DataMart02ETL {
       println("─────────────────────────────────────────")
       println("ÉTAPE 1 : EXTRACTION (PostgreSQL + CSV)")
       println("─────────────────────────────────────────")
-      val raw = extract(spark)
+      val raw = extract(spark, inputCsvPath)
 
       println("\n─────────────────────────────────────────")
       println("ÉTAPE 2 : NETTOYAGE (lazy)")
@@ -50,11 +53,11 @@ object DataMart02ETL {
       println("\n─────────────────────────────────────────")
       println("ÉTAPE 4 : ÉCRITURE CSV")
       println("─────────────────────────────────────────")
-      writeStarToCsv(star)
+      writeStarToCsv(star, outputCsvBasePath)
 
       println("\n═══════════════════════════════════════")
       println("   ETL TERMINÉ AVEC SUCCÈS !")
-      println(s"   CSV  : $outputCsvBasePath")
+      println(s"   CSV  : $outputCsvBasePath/...")
       println("   ├── dim_user/")
       println("   ├── dim_review/")
       println("   ├── dim_elite/")
@@ -69,32 +72,39 @@ object DataMart02ETL {
     }
   }
 
-  def extract(spark: SparkSession): Map[String, DataFrame] = {
-    def readTable(table: String): DataFrame =
+  def extract(spark: SparkSession, inputCsvPath: String): Map[String, DataFrame] = {
+    def readCsv(name: String): DataFrame =
       spark.read
-        .format("jdbc")
-        .option("url",           jdbcUrl)
-        .option("dbtable",       table)
-        .option("user",          jdbcUser)
-        .option("password",      jdbcPassword)
-        .option("driver",        jdbcDriver)
-        .option("fetchsize",     "1000")
-        .option("socketTimeout", "0")
-        .option("tcpKeepAlive",  "true")
-        .load()
+        .option("header",      "true")
+        .option("inferSchema", "true")
+        .csv(s"$inputCsvPath/$name")
 
-    println("[EXTRACT] Connexion à PostgreSQL...")
-    val userDF   = readTable("yelp.user")
-    val reviewDF = readTable("yelp.review")
-    val eliteDF  = readTable("yelp.elite")
-    println("[EXTRACT] ✓ Tables PostgreSQL lues (lazy)")
+    println(s"[EXTRACT] Lecture des CSV finaux depuis : $inputCsvPath")
 
-    println(s"[EXTRACT] Lecture CSV tip : $tipCsvPath")
-    val tipDF = spark.read
-      .option("header", "true")
-      .option("inferSchema", "true")
-      .csv(tipCsvPath)
-    println("[EXTRACT] ✓ tip.csv lu (lazy)")
+    val userDF = readCsv("users.csv")
+    println("[EXTRACT] ✓ users.csv lu")
+
+    // review_date dans le CSV → renommé en date pour compatibilité avec clean()
+    val reviewDF = readCsv("reviews.csv")
+      .withColumnRenamed("review_date", "date")
+    println("[EXTRACT] ✓ reviews.csv lu")
+
+    // user_elite.csv est en format pivot (user_id, elite_2004, elite_2005, ...)
+    // On le dépivote en (user_id, year) pour compatibilité avec clean() et transform()
+    val eliteRaw  = readCsv("user_elite.csv")
+    val yearCols  = eliteRaw.columns.filter(_.startsWith("elite_"))
+    val eliteDF   = yearCols.map { colName =>
+      val year = colName.replace("elite_", "").trim.toInt
+      eliteRaw
+        .filter(col(colName).cast("boolean") === true)
+        .select(col("user_id"), lit(year).as("year"))
+    }.reduce(_.union(_))
+    println(s"[EXTRACT] ✓ user_elite.csv dépivote (${yearCols.length} années)")
+
+    // tip_date dans le CSV → renommé en date pour compatibilité avec clean()
+    val tipDF = readCsv("tips.csv")
+      .withColumnRenamed("tip_date", "date")
+    println("[EXTRACT] ✓ tips.csv lu")
 
     Map("user" -> userDF, "review" -> reviewDF, "elite" -> eliteDF, "tip" -> tipDF)
   }
@@ -162,10 +172,11 @@ object DataMart02ETL {
 
     // Dimension Elite (agrégée par user) — IDs à partir de 1 (0 réservé pour "Not Elite")
     val dimElite = eliteDF.groupBy("user_id").agg(
-      count("*").alias("nbr_elite_years")
+      count("*").alias("nbr_elite_years"),
+      max("year").cast("int").alias("last_elite_year")
     )
     .withColumn("id_elite", monotonically_increasing_id() + 1)
-    .select("id_elite", "user_id", "nbr_elite_years")
+    .select("id_elite", "user_id", "nbr_elite_years", "last_elite_year")
     .cache()
 
     // Dimension Tip (agrégée par user) — IDs à partir de 1 (0 réservé pour "No Tip")
@@ -189,7 +200,7 @@ object DataMart02ETL {
 
     // Dimensions finales sans user_id
     val dimReviewFinal = dimReview.select("id_review", "nbr_reviews", "avg_stars", "total_useful", "total_funny", "total_cool")
-    val dimEliteFinal  = dimElite.select("id_elite", "nbr_elite_years")
+    val dimEliteFinal  = dimElite.select("id_elite", "nbr_elite_years", "last_elite_year")
     val dimTipFinal    = dimTip.select("id_tip", "compliment_count")
 
     // Agrégation tips pour nbr_tips dans la table de faits
@@ -230,7 +241,7 @@ object DataMart02ETL {
     )
   }
 
-  def writeStarToCsv(star: Map[String, DataFrame]): Unit = {
+  def writeStarToCsv(star: Map[String, DataFrame], outputCsvBasePath: String): Unit = {
     def writeCsv(df: DataFrame, name: String): Unit = {
       val path = s"$outputCsvBasePath/$name.csv"
       println(s"[CSV] $name -> $path")

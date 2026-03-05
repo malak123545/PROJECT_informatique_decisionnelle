@@ -40,8 +40,16 @@
 [0m[[0m[0mdebug[0m] [0m[0m	  C:\Users\marti\Documents\Master_2\Informatique_Decisionnel\Projet_ETL\PROJECT_informatique_decisionnelle\ETL_Json\target\scala-2.12\classes\etl\UserETLResult.class[0m
 [0m[[0m[0mdebug[0m] [0m[0m	log4j.properties[0m
 [0m[[0m[0mdebug[0m] [0m[0m	  C:\Users\marti\Documents\Master_2\Informatique_Decisionnel\Projet_ETL\PROJECT_informatique_decisionnelle\ETL_Json\target\scala-2.12\classes\log4j.properties[0m
+[0m[[0m[0mdebug[0m] [0m[0m	ReconcileWithPostgres$.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  C:\Users\marti\Documents\Master_2\Informatique_Decisionnel\Projet_ETL\PROJECT_informatique_decisionnelle\ETL_Json\target\scala-2.12\classes\ReconcileWithPostgres$.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	ReconcileWithPostgres.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  C:\Users\marti\Documents\Master_2\Informatique_Decisionnel\Projet_ETL\PROJECT_informatique_decisionnelle\ETL_Json\target\scala-2.12\classes\ReconcileWithPostgres.class[0m
 [0m[[0m[0mdebug[0m] [0m[0m	utils[0m
 [0m[[0m[0mdebug[0m] [0m[0m	  C:\Users\marti\Documents\Master_2\Informatique_Decisionnel\Projet_ETL\PROJECT_informatique_decisionnelle\ETL_Json\target\scala-2.12\classes\utils[0m
+[0m[[0m[0mdebug[0m] [0m[0m	utils\CountUsers$.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  C:\Users\marti\Documents\Master_2\Informatique_Decisionnel\Projet_ETL\PROJECT_informatique_decisionnelle\ETL_Json\target\scala-2.12\classes\utils\CountUsers$.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	utils\CountUsers.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  C:\Users\marti\Documents\Master_2\Informatique_Decisionnel\Projet_ETL\PROJECT_informatique_decisionnelle\ETL_Json\target\scala-2.12\classes\utils\CountUsers.class[0m
 [0m[[0m[0mdebug[0m] [0m[0m	utils\SparkUtils$.class[0m
 [0m[[0m[0mdebug[0m] [0m[0m	  C:\Users\marti\Documents\Master_2\Informatique_Decisionnel\Projet_ETL\PROJECT_informatique_decisionnelle\ETL_Json\target\scala-2.12\classes\utils\SparkUtils$.class[0m
 [0m[[0m[0mdebug[0m] [0m[0m	utils\SparkUtils.class[0m

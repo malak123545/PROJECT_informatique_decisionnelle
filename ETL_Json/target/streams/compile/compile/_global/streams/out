@@ -1,0 +1,4 @@
+[0m[[0m[31merror[0m] [0m[0mC:\Users\marti\Documents\Master_2\Informatique_Decisionnel\Projet_ETL\PROJECT_informatique_decisionnelle\ETL_Json\src\main\scala\utils\SparksUtils.scala:41:1: '{' expected.[0m
+[0m[[0m[31merror[0m] [0m[0mimport org.apache.spark.sql.DataFrame[0m
+[0m[[0m[31merror[0m] [0m[0m^[0m
+[0m[[0m[31merror[0m] [0m[0mone error found[0m
