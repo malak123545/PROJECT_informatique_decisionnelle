@@ -15,6 +15,9 @@ object YelpETL {
       .appName("Yelp ETL Pipeline")
       .master("local[2]")
       .config("spark.sql.shuffle.partitions", "50")
+      .config("spark.local.dir", "/var/tmp/spark-yelp-etl")
+      .config("spark.executor.memory", "4g")
+      .config("spark.driver.memory", "4g")
       .getOrCreate()
 
     spark.sparkContext.setLogLevel("WARN")
@@ -79,6 +82,18 @@ object YelpETL {
     SparkUtils.saveAsCsv(reviewsFinalDF,    outputDir, "reviews")
 
     SparkUtils.saveAsCsv(users.userDF,        outputDir, "users")
+
+    // ── ÉTAPE 3b : USER MERGE (fusion users + dim_user) ──────────────────────
+    println("\n[3b/5] UserMergeETL...")
+    val userFilteredDF = UserMergeETL.process(
+      spark,
+      users.userDF,
+      reviewDF,
+      validBusinessDF,
+      s"$outputDir/output_other_data/dim_user.csv",
+      s"$outputDir/output_other_data/dim_review.csv"
+    )
+    SparkUtils.saveAsCsv(userFilteredDF, outputDir, "user_filtered")
     SparkUtils.saveAsCsv(users.userEliteDF,   outputDir, "user_elite")
     SparkUtils.saveAsCsv(users.userFriendsDF, outputDir, "user_friends")
 

@@ -1,0 +1,4 @@
+[error] /home/preconys/Images/Captures d’écran/PROJECT_informatique_decisionnelle/ETL_Json/src/main/scala/YelpETL.scala:88:26: not found: value UserMergeETL
+[error]     val userFilteredDF = UserMergeETL.process(
+[error]                          ^
+[error] one error found
