@@ -1,2 +1,3 @@
 *.json
-ETL_Json/src/jsonData/
+ETL_Json/src/Data/
+ETL_Json/src/output/

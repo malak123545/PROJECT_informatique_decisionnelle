@@ -13,6 +13,7 @@ fork := true
 Compile / resourceDirectory := baseDirectory.value / "src/main/resources"
 
 javaOptions ++= Seq(
+  "-Xmx8g",
   "--add-opens=java.base/java.lang=ALL-UNNAMED",
   "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
   "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
