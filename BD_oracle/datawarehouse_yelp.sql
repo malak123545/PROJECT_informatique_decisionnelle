@@ -13,9 +13,10 @@
 --   4. FAIT_USER (DM02)
 --   5. Dimensions dependantes de FAIT_BUSINESS
 --   6. Dimensions dependantes de FAIT_USER
---   7. FAIT_REVIEW (lien entre DM01 et DM02)
---   8. INDEX
---   9. VUES MATERIALISEES
+--   7. ALTER TABLE FK sur FAIT_USER
+--   8. FAIT_REVIEW (lien entre DM01 et DM02)
+--   9. INDEX
+--  10. VUES MATERIALISEES
 -- ============================================================
 
 
@@ -27,6 +28,8 @@ CREATE SEQUENCE SEQ_TYPE_BUSINESS START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
 CREATE SEQUENCE SEQ_CATEGORIE     START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
 CREATE SEQUENCE SEQ_TEMPS         START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
 CREATE SEQUENCE SEQ_TIP           START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+CREATE SEQUENCE SEQ_ELITE         START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+CREATE SEQUENCE SEQ_REVIEW        START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
 
 
 -- ============================================================
@@ -79,13 +82,16 @@ CREATE TABLE FAIT_BUSINESS (
 -- ============================================================
 -- 4. TABLE DE FAITS : FAIT_USER (DM02)
 -- Granularite : 1 ligne par user
+-- Les FK id_review, id_elite, id_tip sont ajoutees via ALTER TABLE
+-- apres creation des dimensions dependantes
 -- ============================================================
 CREATE TABLE FAIT_USER (
     user_id             VARCHAR2(255)   PRIMARY KEY,
+    -- Attributs descriptifs
     name                VARCHAR2(255),
     yelping_since       DATE,
     -- Mesure : activite sociale
-    nb_friends          NUMBER(10),
+    friend_count        NUMBER(10),
     -- Mesures : pertinence des reviews
     review_count        NUMBER(10),
     average_stars       NUMBER(19, 4),
@@ -107,6 +113,10 @@ CREATE TABLE FAIT_USER (
     compliment_funny    NUMBER(10),
     compliment_writer   NUMBER(10),
     compliment_photos   NUMBER(10),
+    -- Cles etrangeres vers dimensions DM02
+    id_review           NUMBER(10),
+    id_elite            NUMBER(10),
+    id_tip              NUMBER(10),
     temps_id            NUMBER(10)      REFERENCES DIM_TEMPS(temps_id)
 );
 
@@ -157,9 +167,11 @@ CREATE TABLE DIM_CATEGORIE (
 -- 6. DIMENSIONS DEPENDANTES DE FAIT_USER (DM02)
 -- ============================================================
 
--- Elite (1-1 avec user | annees en colonnes booleennes)
+-- Elite (1-1 avec user | id_elite comme PK + nbr_elite_years)
 CREATE TABLE DIM_USER_ELITE (
-    user_id             VARCHAR2(255)   PRIMARY KEY REFERENCES FAIT_USER(user_id),
+    id_elite            NUMBER(10)      PRIMARY KEY,
+    user_id             VARCHAR2(255)   REFERENCES FAIT_USER(user_id),
+    nbr_elite_years     NUMBER(10),
     elite_2015          NUMBER(1),
     elite_2016          NUMBER(1),
     elite_2017          NUMBER(1),
@@ -172,20 +184,23 @@ CREATE TABLE DIM_USER_ELITE (
     elite_2024          NUMBER(1)
 );
 
--- Reviews (1-to-many avec user)
+-- Reviews (1-to-many avec user | id_review comme PK numerique)
 CREATE TABLE DIM_REVIEW (
-    review_id           VARCHAR2(255)   PRIMARY KEY,
+    id_review           NUMBER(10)      PRIMARY KEY,
+    review_id           VARCHAR2(255)   UNIQUE NOT NULL,  -- identifiant source Yelp
     user_id             VARCHAR2(255)   REFERENCES FAIT_USER(user_id),
-    stars               NUMBER(2, 1),
-    date_review         DATE,
-    nbr_useful          NUMBER(10),
-    nbr_funny           NUMBER(10),
-    nbr_cool            NUMBER(10)
+    nbr_reviews         NUMBER(10),     -- nombre total de reviews du user
+    avg_stars           NUMBER(19, 4),  -- moyenne des etoiles du user
+    total_useful        NUMBER(10),
+    total_funny         NUMBER(10),
+    total_cool          NUMBER(10),
+    stars               NUMBER(2, 1),   -- note de la review individuelle
+    date_review         DATE
 );
 
--- Tips (1-to-many avec user)
+-- Tips (1-to-many avec user | id_tip comme PK)
 CREATE TABLE DIM_TIP (
-    tip_id              NUMBER(10)      PRIMARY KEY,
+    id_tip              NUMBER(10)      PRIMARY KEY,
     user_id             VARCHAR2(255)   REFERENCES FAIT_USER(user_id),
     date_tip            DATE,
     compliment_count    NUMBER(10)
@@ -193,10 +208,18 @@ CREATE TABLE DIM_TIP (
 
 
 -- ============================================================
--- 7. TABLE DE FAITS : FAIT_REVIEW (LIEN DM01 <-> DM02)
+-- 7. CONTRAINTES FK sur FAIT_USER
+-- (ajoutees apres creation des dimensions dependantes)
+-- ============================================================
+ALTER TABLE FAIT_USER ADD CONSTRAINT FK_USER_REVIEW FOREIGN KEY (id_review) REFERENCES DIM_REVIEW(id_review);
+ALTER TABLE FAIT_USER ADD CONSTRAINT FK_USER_ELITE  FOREIGN KEY (id_elite)  REFERENCES DIM_USER_ELITE(id_elite);
+ALTER TABLE FAIT_USER ADD CONSTRAINT FK_USER_TIP    FOREIGN KEY (id_tip)    REFERENCES DIM_TIP(id_tip);
+
+
+-- ============================================================
+-- 8. TABLE DE FAITS : FAIT_REVIEW (LIEN DM01 <-> DM02)
 -- Granularite : 1 ligne par review
 -- Relie FAIT_BUSINESS et FAIT_USER
--- Permet des requetes cross-datamart
 -- ============================================================
 CREATE TABLE FAIT_REVIEW (
     review_id           VARCHAR2(255)   PRIMARY KEY,
@@ -213,7 +236,7 @@ CREATE TABLE FAIT_REVIEW (
 
 
 -- ============================================================
--- 8. INDEX
+-- 9. INDEX
 -- ============================================================
 
 -- Index FAIT_BUSINESS
@@ -243,7 +266,7 @@ CREATE INDEX IDX_HOR_SAT        ON DIM_HORAIRE(saturday_opening);
 CREATE INDEX IDX_HOR_SUN        ON DIM_HORAIRE(sunday_opening);
 
 -- Index FAIT_USER
-CREATE INDEX IDX_FU_FRIENDS     ON FAIT_USER(nb_friends);
+CREATE INDEX IDX_FU_FRIENDS     ON FAIT_USER(friend_count);
 CREATE INDEX IDX_FU_RC          ON FAIT_USER(review_count);
 CREATE INDEX IDX_FU_USEFUL      ON FAIT_USER(useful);
 CREATE INDEX IDX_FU_ELITE_NB    ON FAIT_USER(nb_annees_elite);
@@ -251,12 +274,15 @@ CREATE INDEX IDX_FU_STARS       ON FAIT_USER(average_stars);
 CREATE INDEX IDX_FU_FANS        ON FAIT_USER(fans);
 CREATE INDEX IDX_FU_SINCE       ON FAIT_USER(yelping_since);
 CREATE INDEX IDX_FU_TEMPS       ON FAIT_USER(temps_id);
+CREATE INDEX IDX_FU_ID_REV      ON FAIT_USER(id_review);
+CREATE INDEX IDX_FU_ID_ELITE    ON FAIT_USER(id_elite);
+CREATE INDEX IDX_FU_ID_TIP      ON FAIT_USER(id_tip);
 
 -- Index DIM_REVIEW
 CREATE INDEX IDX_REV_USER       ON DIM_REVIEW(user_id);
-CREATE INDEX IDX_REV_STARS      ON DIM_REVIEW(stars);
+CREATE INDEX IDX_REV_STARS      ON DIM_REVIEW(avg_stars);
 CREATE INDEX IDX_REV_DATE       ON DIM_REVIEW(date_review);
-CREATE INDEX IDX_REV_USEFUL     ON DIM_REVIEW(nbr_useful);
+CREATE INDEX IDX_REV_USEFUL     ON DIM_REVIEW(total_useful);
 
 -- Index DIM_TIP
 CREATE INDEX IDX_TIP_USER       ON DIM_TIP(user_id);
@@ -264,6 +290,7 @@ CREATE INDEX IDX_TIP_DATE       ON DIM_TIP(date_tip);
 
 -- Index DIM_USER_ELITE
 CREATE INDEX IDX_ELITE_2024     ON DIM_USER_ELITE(elite_2024);
+CREATE INDEX IDX_ELITE_NBR      ON DIM_USER_ELITE(nbr_elite_years);
 
 -- Index DIM_TEMPS
 CREATE INDEX IDX_TEMPS_ANNEE    ON DIM_TEMPS(annee);
@@ -278,7 +305,7 @@ CREATE INDEX IDX_FR_DATE        ON FAIT_REVIEW(date_review);
 
 
 -- ============================================================
--- 9. VUES MATERIALISEES
+-- 10. VUES MATERIALISEES
 -- Rafraichir apres chaque chargement ETL :
 --   EXEC DBMS_MVIEW.REFRESH('nom_vue');
 -- ============================================================
@@ -348,17 +375,16 @@ CREATE MATERIALIZED VIEW MV_TOP_USER_QUALITE
 BUILD IMMEDIATE REFRESH COMPLETE ON DEMAND AS
 SELECT
     f.user_id, f.name, f.review_count, f.average_stars, f.useful,
-    COUNT(r.review_id)  AS nb_reviews_total,
-    AVG(r.stars)        AS avg_stars_reviews,
-    SUM(r.nbr_useful)   AS total_useful_reviews
+    r.nbr_reviews,
+    r.avg_stars           AS avg_stars_reviews,
+    r.total_useful        AS total_useful_reviews
 FROM FAIT_USER f
-JOIN DIM_REVIEW r ON f.user_id = r.user_id
-GROUP BY f.user_id, f.name, f.review_count, f.average_stars, f.useful
-ORDER BY total_useful_reviews DESC, avg_stars_reviews DESC;
+JOIN DIM_REVIEW r ON f.id_review = r.id_review
+ORDER BY r.total_useful DESC, r.avg_stars DESC;
 
 CREATE MATERIALIZED VIEW MV_TOP_USER_NB_REVIEWS
 BUILD IMMEDIATE REFRESH COMPLETE ON DEMAND AS
-SELECT user_id, name, review_count, average_stars, useful, nb_friends
+SELECT user_id, name, review_count, average_stars, useful, friend_count
 FROM FAIT_USER
 ORDER BY review_count DESC;
 
@@ -367,25 +393,26 @@ BUILD IMMEDIATE REFRESH COMPLETE ON DEMAND AS
 SELECT
     f.user_id, f.name, f.nb_annees_elite,
     f.average_stars, f.review_count, f.useful,
+    e.nbr_elite_years,
     e.elite_2022, e.elite_2023, e.elite_2024
 FROM FAIT_USER f
-JOIN DIM_USER_ELITE e ON f.user_id = e.user_id
-WHERE f.nb_annees_elite > 0
-ORDER BY f.nb_annees_elite DESC;
+JOIN DIM_USER_ELITE e ON f.id_elite = e.id_elite
+WHERE e.nbr_elite_years > 0
+ORDER BY e.nbr_elite_years DESC;
 
 CREATE MATERIALIZED VIEW MV_TOP_USER_FRIENDS
 BUILD IMMEDIATE REFRESH COMPLETE ON DEMAND AS
-SELECT user_id, name, nb_friends, review_count, average_stars, useful, fans
+SELECT user_id, name, friend_count, review_count, average_stars, useful, fans
 FROM FAIT_USER
-ORDER BY nb_friends DESC;
+ORDER BY friend_count DESC;
 
 CREATE MATERIALIZED VIEW MV_USER_SCORE_GLOBAL
 BUILD IMMEDIATE REFRESH COMPLETE ON DEMAND AS
 SELECT
-    f.user_id, f.name, f.nb_friends, f.review_count,
+    f.user_id, f.name, f.friend_count, f.review_count,
     f.average_stars, f.useful, f.nb_annees_elite, f.fans,
     (f.useful + f.fans + (f.review_count * f.average_stars) +
-    (f.nb_annees_elite * 100) + (f.nb_friends / 10)) AS score_pertinence
+    (f.nb_annees_elite * 100) + (f.friend_count / 10)) AS score_pertinence
 FROM FAIT_USER f
 ORDER BY score_pertinence DESC;
 
@@ -431,9 +458,7 @@ ORDER BY nb_users_elite DESC;
 CREATE MATERIALIZED VIEW MV_STARS_EVOLUTION
 BUILD IMMEDIATE REFRESH COMPLETE ON DEMAND AS
 SELECT
-    l.city,
-    l.state,
-    t.annee,
+    l.city, l.state, t.annee,
     COUNT(r.review_id)  AS nb_reviews,
     AVG(r.stars)        AS avg_stars,
     SUM(r.nbr_useful)   AS total_useful
