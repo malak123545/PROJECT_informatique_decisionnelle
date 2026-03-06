@@ -2,3 +2,34 @@
 *.csv
 ETL_Json/src/Data/
 ETL_Json/src/output/
+ETL_Json/output/*
+# Compiled files
+bin/
+target/
+*.class
+*.jar
+!postgresql-42.7.1.jar
+
+# SBT
+project/target/
+project/project/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.metals/
+.bloop/
+
+# Configuration
+config.properties
+
+# Logs
+*.log
+spark-warehouse/
+metastore_db/
+derby.log
+
+# OS
+.DS_Store
+Thumbs.db
