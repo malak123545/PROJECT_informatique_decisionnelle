@@ -1,2 +1,11 @@
 [debug] Created transactional ClassFileManager with tempDir = /home/preconys/Images/Captures d’écran/PROJECT_informatique_decisionnelle/ETL_Json/target/scala-2.12/classes.bak
+[debug] About to delete class files:
+[debug] 	YelpETL$.class
+[debug] 	YelpETL.class
+[debug] We backup class files:
+[debug] 	YelpETL$.class
+[debug] 	YelpETL.class
+[debug] Registering generated classes:
+[debug] 	YelpETL$.class
+[debug] 	YelpETL.class
 [debug] Removing the temporary directory used for backing up class files: /home/preconys/Images/Captures d’écran/PROJECT_informatique_decisionnelle/ETL_Json/target/scala-2.12/classes.bak

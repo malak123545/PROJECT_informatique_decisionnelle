@@ -17,6 +17,7 @@ object YelpETL {
       .master("local[*]")
       .config("spark.driver.memory", "6g")
       .config("spark.sql.shuffle.partitions", "50")
+      .config("spark.local.dir", "/home/preconys/spark-local")
       .getOrCreate()
 
     spark.sparkContext.setLogLevel("WARN")
