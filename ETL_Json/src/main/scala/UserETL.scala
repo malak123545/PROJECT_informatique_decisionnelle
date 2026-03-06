@@ -39,7 +39,6 @@ object UserETL {
       .withColumn("elite_year", trim(col("elite_year")))
       .filter(col("elite_year") =!= "")
 
-    // On limite aux années du schema Oracle DIM_USER_ELITE (elite_2015..elite_2024)
     val oracleEliteRange = (2015 to 2024).map(_.toString).toSet
 
     val eliteYears = eliteExploded
@@ -49,8 +48,6 @@ object UserETL {
 
     println(s"  Années élite retenues (2015-2024) : ${eliteYears.mkString(", ")}")
 
-    // DIM_USER_ELITE : id_elite (PK), user_id, nbr_elite_years, elite_YYYY (0/1)
-    // Colonnes Oracle : id_elite, user_id, nbr_elite_years, elite_2015..elite_2024
     val userEliteDF = if (eliteYears.nonEmpty) {
       val eliteCols = eliteYears.map(year =>
         sum(when(col("elite_year") === year, lit(1)).otherwise(lit(0)))
@@ -73,9 +70,6 @@ object UserETL {
 
     // ========================
     // 2. FRIENDS — paires (user_id, friend_id)
-    // Une ligne par relation, les deux colonnes sont des user_ids valides.
-    // Les index sur user_id et friend_id suffiront pour retrouver toutes
-    // les relations d'un utilisateur donné dans les deux sens.
     // ========================
     val userFriendsDF = rawFiltered
       .filter(col("friends").isNotNull &&
@@ -84,7 +78,6 @@ object UserETL {
       .select("user_id", "friends")
       .withColumn("friend_id", explode(split(trim(col("friends")), ",")))
       .withColumn("friend_id", trim(col("friend_id")))
-      // Ne garder que les amis qui sont eux-mêmes des users valides
       .join(
         validUserIds.withColumnRenamed("user_id", "friend_id"),
         Seq("friend_id"),
@@ -94,7 +87,10 @@ object UserETL {
       .dropDuplicates()
 
     // ========================
-    // 3. USER PRINCIPAL (avec friend_count et last_elite_year calculés)
+    // 3. FAIT_USER
+    // Colonnes Oracle : user_id (PK), name, yelping_since, friend_count, review_count,
+    //                   average_stars, useful, funny, cool, fans, nb_annees_elite,
+    //                   derniere_annee_elite, compliment_hot..compliment_funny
     // ========================
     val friendCountDF = userFriendsDF
       .groupBy("user_id")
@@ -103,7 +99,7 @@ object UserETL {
     val lastEliteYearDF = eliteExploded
       .groupBy("user_id")
       .agg(
-        max(col("elite_year").cast("int")).as("last_elite_year"),
+        max(col("elite_year").cast("int")).as("derniere_annee_elite"),
         count("*").cast("int").as("nb_annees_elite")
       )
 
@@ -126,16 +122,14 @@ object UserETL {
         col("compliment_note"),
         col("compliment_plain"),
         col("compliment_cool"),
-        col("compliment_funny"),
-        col("compliment_writer"),
-        col("compliment_photos")
+        col("compliment_funny")
       )
-      .join(friendCountDF,    Seq("user_id"), "left")
-      .join(lastEliteYearDF,  Seq("user_id"), "left")
+      .join(friendCountDF,   Seq("user_id"), "left")
+      .join(lastEliteYearDF, Seq("user_id"), "left")
       .withColumn("friend_count",
         when(col("friend_count").isNull, lit(0)).otherwise(col("friend_count")))
-      .withColumn("last_elite_year",
-        when(col("last_elite_year").isNull, lit(0)).otherwise(col("last_elite_year")))
+      .withColumn("derniere_annee_elite",
+        when(col("derniere_annee_elite").isNull, lit(0)).otherwise(col("derniere_annee_elite")))
       .withColumn("nb_annees_elite",
         when(col("nb_annees_elite").isNull, lit(0)).otherwise(col("nb_annees_elite")))
 

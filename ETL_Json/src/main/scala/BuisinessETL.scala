@@ -7,12 +7,12 @@ import org.apache.spark.sql.expressions.Window
 
 case class BusinessETLResult(
   businessDF:      DataFrame,  // FAIT_BUSINESS
-  localisationDF:  DataFrame,  // DIM_LOCALISATION (new)
-  hoursDF:         DataFrame,  // DIM_HORAIRE (business_id key, split opening/closing)
+  localisationDF:  DataFrame,  // DIM_LOCALISATION
+  hoursDF:         DataFrame,  // DIM_HORAIRE
   attributesDF:    DataFrame,  // extra (hors schema Oracle)
-  parkingDF:       DataFrame,  // DIM_PARKING (business_id key, paid ajouté)
-  businessTypesDF: DataFrame,  // DIM_TYPE_BUSINESS (type_id, type_name)
-  categoriesDF:    DataFrame   // DIM_CATEGORIE (categorie_id, business_id, categorie_name)
+  parkingDF:       DataFrame,  // DIM_PARKING (parking_id PK)
+  businessTypesDF: DataFrame,  // DIM_TYPE_BUSINESS
+  categoriesDF:    DataFrame   // DIM_CATEGORIE
 )
 
 object BusinessETL {
@@ -23,7 +23,7 @@ object BusinessETL {
     val raw = spark.read.json(inputPath)
 
     // ========================
-    // 1. DIM_LOCALISATION — 1 ligne par business
+    // 1. DIM_LOCALISATION
     // Colonnes Oracle : localisation_id, city, state, postal_code, address, latitude, longitude
     // ========================
     val localisationWithBiz = raw
@@ -51,8 +51,8 @@ object BusinessETL {
     )
 
     // ========================
-    // 2. DIM_HORAIRE — business_id comme clé, split opening/closing
-    // Colonnes Oracle : business_id, {day}_opening, {day}_closing pour chaque jour
+    // 2. DIM_HORAIRE — business_id clé PK, split opening/closing
+    // Colonnes Oracle : business_id, {day}_opening, {day}_closing
     // ========================
     val days = Seq("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
@@ -77,7 +77,7 @@ object BusinessETL {
     )
 
     // ========================
-    // 3. ATTRIBUTES (extra, hors schema Oracle, conservé pour info)
+    // 3. ATTRIBUTES (extra, hors schema Oracle)
     // ========================
     val attributesMapping = raw
       .filter(col("attributes").isNotNull)
@@ -94,8 +94,8 @@ object BusinessETL {
       )
 
     // ========================
-    // 4. DIM_PARKING — business_id comme clé PK, paid ajouté à 0
-    // Colonnes Oracle : business_id, garage, street, lot, paid, validated, valet
+    // 4. DIM_PARKING
+    // Colonnes Oracle : parking_id (PK), business_id (FK), garage, street, lot, paid, validated, valet
     // ========================
     val parkingSchema = StructType(Seq(
       StructField("garage",    BooleanType),
@@ -125,10 +125,24 @@ object BusinessETL {
         col("parking_parsed.validated").cast("int").as("validated"),
         col("parking_parsed.valet").cast("int").as("valet")
       )
+      .withColumn("parking_id", monotonically_increasing_id())
+      .select(
+        col("parking_id"),
+        col("business_id"),
+        col("garage"),
+        col("street"),
+        col("lot"),
+        col("paid"),
+        col("validated"),
+        col("valet")
+      )
+
+    // Mapping business_id → parking_id pour FK dans FAIT_BUSINESS
+    val parkingMapping = parkingDF.select("business_id", "parking_id")
 
     // ========================
-    // 5. DIM_CATEGORIE — categorie_id (PK), business_id (FK), categorie_name
-    // Colonnes Oracle : categorie_id, business_id, categorie_name
+    // 5. DIM_CATEGORIE
+    // Colonnes Oracle : categorie_id (PK), business_id (FK), categorie_name
     // ========================
     val categoriesExploded = raw
       .filter(col("categories").isNotNull)
@@ -144,8 +158,8 @@ object BusinessETL {
       .select("categorie_id", "business_id", "categorie_name")
 
     // ========================
-    // 6. DIM_TYPE_BUSINESS — type_id (PK), type_name
-    // Colonnes Oracle : type_id, type_name
+    // 6. DIM_TYPE_BUSINESS
+    // Colonnes Oracle : type_id (PK), type_name
     // ========================
     val typePatterns = Map(
       "Restaurant"  -> "(?i).*(restaurant|food|cuisine|diner|bistro|eatery).*",
@@ -181,25 +195,26 @@ object BusinessETL {
       .select("business_id", "type_id")
 
     // ========================
-    // 7. FAIT_BUSINESS — localisation_id et type_id comme FKs
-    // Colonnes Oracle : business_id, name, is_open, localisation_id, type_id, stars, review_count
+    // 7. FAIT_BUSINESS
+    // Colonnes Oracle : business_id (PK), name, localisation_id (FK), type_id (FK),
+    //                   parking_id (FK), stars, review_count
     // ========================
     val businessDF = raw
       .select(
         col("business_id"),
         col("name"),
-        col("is_open"),
         col("stars"),
         col("review_count")
       )
-      .join(localisationMapping, Seq("business_id"), "left")
-      .join(businessTypesMapped, Seq("business_id"), "inner") // inner = filtre les sans-type
+      .join(localisationMapping,   Seq("business_id"), "left")
+      .join(businessTypesMapped,   Seq("business_id"), "inner") // inner = filtre les sans-type
+      .join(parkingMapping,        Seq("business_id"), "left")  // left = parking optionnel
       .select(
         col("business_id"),
         col("name"),
-        col("is_open"),
         col("localisation_id"),
         col("type_id"),
+        col("parking_id"),
         col("stars"),
         col("review_count")
       )

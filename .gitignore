@@ -1,3 +1,4 @@
 *.json
+*.csv
 ETL_Json/src/Data/
 ETL_Json/src/output/

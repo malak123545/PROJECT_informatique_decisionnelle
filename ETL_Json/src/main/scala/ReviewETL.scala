@@ -20,11 +20,10 @@ object ReviewETL {
         col("review_id"),
         col("user_id"),
         col("business_id"),
+        col("useful").as("total_useful"),
+        col("funny").as("total_funny"),
+        col("cool").as("total_cool"),
         col("stars"),
-        col("useful").as("nbr_useful"),
-        col("funny").as("nbr_funny"),
-        col("cool").as("nbr_cool"),
-        col("text"),
         col("date").cast("timestamp").as("date_review")
       )
       // Ne garder que les reviews pointant vers un business valide
@@ -34,7 +33,20 @@ object ReviewETL {
         "inner"
       )
       // Ne garder que les reviews avec au moins 1 vote utile
-      .filter(col("nbr_useful") > 0)
+      .filter(col("total_useful") > 0)
+      // id_review : clé surrogate Oracle (DIM_REVIEW PK)
+      .withColumn("id_review", monotonically_increasing_id())
+      .select(
+        col("id_review"),
+        col("review_id"),
+        col("user_id"),
+        col("business_id"),
+        col("total_useful"),
+        col("total_funny"),
+        col("total_cool"),
+        col("stars"),
+        col("date_review")
+      )
       .cache()  // évite de relire le JSON à chaque action
 
     println(s"\n=== ReviewETL — Statistiques ===")
@@ -42,7 +54,7 @@ object ReviewETL {
 
     val statsRow = reviewDF.agg(
       avg("stars").as("avg_stars"),
-      avg("nbr_useful").as("avg_useful")
+      avg("total_useful").as("avg_useful")
     ).collect()(0)
     println(f"Moyenne stars  : ${statsRow.getDouble(0)}%.2f")
     println(f"Moyenne useful : ${statsRow.getDouble(1)}%.2f")

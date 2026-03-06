@@ -10,6 +10,7 @@ import utils.SparkUtils
 //   - Lit yelp.review depuis PostgreSQL
 //   - Filtre les reviews PG sur les business présents dans business.csv
 //   - N'ajoute que les reviews PG absentes du CSV (anti-join sur review_id)
+//   - Régénère id_review après merge pour garantir l'unicité
 //   - Écrase reviews.csv avec le résultat enrichi
 //
 // Users :
@@ -80,34 +81,32 @@ object ReconcileWithPostgres {
 
     // ══════════════════════════════════════════════════════
     // REVIEWS
+    // Schéma cible DIM_REVIEW :
+    //   id_review, review_id, user_id, business_id,
+    //   total_useful, total_funny, total_cool, stars, date_review
     // ══════════════════════════════════════════════════════
     println("\n[2/3] Reconciliation reviews...")
 
-    // Colonnes cibles (schéma du CSV Phase 1) :
-    //   review_id, user_id, business_id, stars, useful, funny, cool, text, review_date
     val pgReviewsRaw = readPg("yelp.review")
 
-    // Aligner sur le schema Oracle : date → date_review, useful/funny/cool → nbr_useful/nbr_funny/nbr_cool
     val dateCol = if (pgReviewsRaw.columns.contains("date_review")) "date_review" else "date"
 
+    // Aligner le schéma PG sur DIM_REVIEW (sans id_review — regénéré après merge)
     val pgReviews = pgReviewsRaw
       .select(
         col("review_id"),
         col("user_id"),
         col("business_id"),
+        col("useful").as("total_useful"),
+        col("funny").as("total_funny"),
+        col("cool").as("total_cool"),
         col("stars"),
-        col("useful").as("nbr_useful"),
-        col("funny").as("nbr_funny"),
-        col("cool").as("nbr_cool"),
-        col("text"),
         col(dateCol).cast("timestamp").as("date_review")
       )
-      // Filtrer sur les business présents dans business.csv
       .join(validBizIds, Seq("business_id"), "inner")
-      // Ne garder que les reviews avec au moins 1 vote utile
-      .filter(col("nbr_useful") > 0)
+      .filter(col("total_useful") > 0)
 
-    // Garder uniquement les reviews PG absentes du CSV (par review_id)
+    // Nouvelles reviews PG absentes du CSV
     val pgReviewsNew = pgReviews.join(
       csvReviews.select("review_id"),
       Seq("review_id"),
@@ -119,10 +118,21 @@ object ReconcileWithPostgres {
     println(s"  -> Reviews PG (apres filtre biz): ${pgReviews.count()}")
     println(s"  -> Reviews PG ajoutees (new)    : $addedReviewCount")
 
-    // Union : schema CSV + nouvelles PG
-    val mergedReviews = csvReviews.union(
-      pgReviewsNew.select(csvReviews.columns.map(col): _*)
-    ).cache()
+    // Colonnes sans id_review pour l'union
+    val reviewColsNoPk = csvReviews.columns.filter(_ != "id_review")
+
+    // Ajouter null id_review aux nouvelles reviews PG avant union
+    val pgReviewsNewAligned = pgReviewsNew
+      .withColumn("id_review", lit(null).cast("long"))
+      .select(csvReviews.columns.map(col): _*)
+
+    // Union puis régénération de id_review pour garantir l'unicité
+    val mergedReviews = csvReviews
+      .union(pgReviewsNewAligned)
+      .drop("id_review")
+      .withColumn("id_review", monotonically_increasing_id())
+      .select(csvReviews.columns.map(col): _*)
+      .cache()
 
     println(s"  -> Total reviews fusionnees     : ${mergedReviews.count()}")
     SparkUtils.saveAsCsv(mergedReviews, outputDir, "reviews")
@@ -134,47 +144,39 @@ object ReconcileWithPostgres {
 
     val pgUsersRaw = readPg("yelp.user")
 
-    // Calcul du friend_count depuis yelp.friend (1 ligne par relation user_id -> friend_id)
     val pgFriendCount = readPg("yelp.friend")
       .groupBy("user_id")
       .agg(count("*").cast("long").as("friend_count"))
 
-    // Joindre le friend_count calculé aux users PG avant d'aligner le schema
     val pgUsersWithFriends = pgUsersRaw
       .join(pgFriendCount, Seq("user_id"), "left")
       .withColumn("friend_count", coalesce(col("friend_count"), lit(0L)))
       .filter(col("review_count") > 0)
 
-    // Aligner le schema PG sur le schema CSV
-    // Les colonnes encore manquantes (ex: last_elite_year si absente de PG) sont remplies a 0
     val csvUserCols = csvUsers.columns
     val pgUsersAligned = csvUserCols.foldLeft(pgUsersWithFriends) { (df, colName) =>
       if (df.columns.contains(colName)) df
       else df.withColumn(colName, lit(0))
     }.select(csvUserCols.map(c => col(c)): _*)
 
-    // Users presents uniquement dans le CSV → conserves tels quels
     val csvOnlyUsers = csvUsers.join(
       pgUsersAligned.select("user_id"),
       Seq("user_id"),
       "left_anti"
     )
 
-    // Users presents uniquement dans PG → ajoutes
     val pgOnlyUsers = pgUsersAligned.join(
       csvUsers.select("user_id"),
       Seq("user_id"),
       "left_anti"
     )
 
-    // Users en CONFLIT (presents dans les deux)
-    // Regle : si review_count PG > review_count CSV → PG gagne, sinon CSV gagne
     val pgReviewCountRef = pgUsersAligned
       .select(col("user_id"), col("review_count").as("pg_review_count"))
 
     val csvConflict = csvUsers
       .join(pgReviewCountRef, Seq("user_id"), "inner")
-      .filter(col("review_count") >= col("pg_review_count")) // CSV >= PG → CSV
+      .filter(col("review_count") >= col("pg_review_count"))
       .drop("pg_review_count")
 
     val csvReviewCountRef = csvUsers
@@ -182,7 +184,7 @@ object ReconcileWithPostgres {
 
     val pgConflict = pgUsersAligned
       .join(csvReviewCountRef, Seq("user_id"), "inner")
-      .filter(col("review_count") > col("csv_review_count")) // PG strictement > → PG
+      .filter(col("review_count") > col("csv_review_count"))
       .drop("csv_review_count")
 
     val pgOnlyCount      = pgOnlyUsers.count()
@@ -201,16 +203,11 @@ object ReconcileWithPostgres {
 
     println(s"  -> Total users fusionnes     : ${mergedUsers.count()}")
 
-    // ── Recalcul des stats depuis les reviews finales ─────
-    // Les review_count / average_stars / useful / funny / cool
-    // sont recalcules a partir des reviews reelles qu'on possede
-    // (les valeurs originales Yelp etaient sur l'ensemble non filtre)
     println("\n  Recalcul des stats users depuis les reviews finales...")
     val updatedUsers = updateUserStats(mergedUsers, mergedReviews)
       .filter(col("review_count") > 0)
     SparkUtils.saveAsCsv(updatedUsers, outputDir, "users")
 
-    // Nettoyage
     csvReviews.unpersist()
     csvUsers.unpersist()
     validBizIds.unpersist()
@@ -229,9 +226,9 @@ object ReconcileWithPostgres {
       .agg(
         count("*").cast("int").as("review_count"),
         round(avg("stars"), 2).as("average_stars"),
-        sum("nbr_useful").cast("long").as("useful"),
-        sum("nbr_funny").cast("long").as("funny"),
-        sum("nbr_cool").cast("long").as("cool")
+        sum("total_useful").cast("long").as("useful"),
+        sum("total_funny").cast("long").as("funny"),
+        sum("total_cool").cast("long").as("cool")
       )
 
     usersDF

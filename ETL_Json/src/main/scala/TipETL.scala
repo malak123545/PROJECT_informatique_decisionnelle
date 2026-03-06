@@ -6,9 +6,9 @@ import org.apache.spark.sql.functions._
 object TipETL {
 
   def process(
-    spark:      SparkSession,
-    inputPath:  String,
-    validBizDF: DataFrame,
+    spark:       SparkSession,
+    inputPath:   String,
+    validBizDF:  DataFrame,
     validUserDF: DataFrame  // users valides issus de UserETL
   ): DataFrame = {
 
@@ -17,23 +17,22 @@ object TipETL {
     val raw = spark.read.json(inputPath)
 
     val tipDF = raw
-      .withColumn("id_tip", monotonically_increasing_id())
-      .select(
-        col("id_tip"),                                          // PK Oracle DIM_TIP
-        col("user_id"),
-        col("date").cast("timestamp").as("date_tip"),
-        col("compliment_count"),
-        // colonnes hors schema Oracle conservées pour usage interne/DataMart
-        col("business_id"),
-        col("text")
-      )
       // Filtrer sur les business valides
       .join(validBizDF.select("business_id"),  Seq("business_id"), "inner")
       // Filtrer sur les users valides
       .join(validUserDF.select("user_id"),     Seq("user_id"),     "inner")
       // Ne garder que les tips avec au moins 1 compliment
       .filter(col("compliment_count") > 0)
-      .cache()  // évite de relire le JSON à chaque action
+      .withColumn("id_tip", monotonically_increasing_id())
+      // Colonnes Oracle DIM_TIP : id_tip (PK), user_id (FK), business_id (FK), date_tip, compliment_count
+      .select(
+        col("id_tip"),
+        col("user_id"),
+        col("business_id"),
+        col("date").cast("timestamp").as("date_tip"),
+        col("compliment_count")
+      )
+      .cache()
 
     println(s"\n=== TipETL — Statistiques ===")
     println(s"Tips après filtrage : ${tipDF.count()}")
