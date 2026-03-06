@@ -30,9 +30,9 @@ object CheckinETL {
         month(col("checkin_datetime")).as("month"),
         year(col("checkin_datetime")).as("year")
       )
+      .cache()  // évite de relire le JSON à chaque action
 
     println(s"\n=== CheckinETL — Statistiques ===")
-    println(s"Checkins bruts          : ${raw.count()}")
     println(s"Checkins après filtrage : ${checkinDF.count()}")
     println(s"Business avec checkins  : ${checkinDF.select("business_id").distinct().count()}")
 

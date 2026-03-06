@@ -14,7 +14,8 @@ object YelpETL {
 
     val spark = SparkSession.builder()
       .appName("Yelp ETL Pipeline")
-      .master("local[2]")
+      .master("local[*]")
+      .config("spark.driver.memory", "6g")
       .config("spark.sql.shuffle.partitions", "50")
       .getOrCreate()
 

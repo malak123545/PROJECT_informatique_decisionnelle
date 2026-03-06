@@ -35,9 +35,9 @@ object ReviewETL {
       )
       // Ne garder que les reviews avec au moins 1 vote utile
       .filter(col("nbr_useful") > 0)
+      .cache()  // évite de relire le JSON à chaque action
 
     println(s"\n=== ReviewETL — Statistiques ===")
-    println(s"Reviews brutes          : ${raw.count()}")
     println(s"Reviews après filtrage  : ${reviewDF.count()}")
 
     val statsRow = reviewDF.agg(

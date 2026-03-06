@@ -33,9 +33,9 @@ object TipETL {
       .join(validUserDF.select("user_id"),     Seq("user_id"),     "inner")
       // Ne garder que les tips avec au moins 1 compliment
       .filter(col("compliment_count") > 0)
+      .cache()  // évite de relire le JSON à chaque action
 
     println(s"\n=== TipETL — Statistiques ===")
-    println(s"Tips bruts          : ${raw.count()}")
     println(s"Tips après filtrage : ${tipDF.count()}")
 
     val avgCompliments = tipDF.agg(avg("compliment_count")).collect()(0).getDouble(0)

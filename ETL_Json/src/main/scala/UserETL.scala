@@ -27,6 +27,7 @@ object UserETL {
 
     val rawFiltered = raw.join(validUserIds, Seq("user_id"), "inner")
       .filter(col("review_count") > 0)
+      .cache()  // évite de relire le JSON à chaque transformation
 
     // ========================
     // 1. ELITE (dénormalisé)
@@ -139,7 +140,6 @@ object UserETL {
         when(col("nb_annees_elite").isNull, lit(0)).otherwise(col("nb_annees_elite")))
 
     println(s"\n=== UserETL — Statistiques ===")
-    println(s"Users bruts             : ${raw.count()}")
     println(s"Users après filtrage    : ${userDF.count()}")
     println(s"Users élite             : ${userEliteDF.count()}")
     println(s"Paires d'amis           : ${userFriendsDF.count()}")
