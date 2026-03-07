@@ -1,23 +1,43 @@
--- QUESTION 1 : Classement global par score de pertinence
+-- ============================================================
+-- VUE : V_TOP_USERS_BY_BUSINESS_TYPE
+-- Scénario 1 — Récompenser les users contributeurs
+-- ============================================================
+-- Objectif : identifier les 100 meilleurs utilisateurs par
+--   type de business, selon un score de pertinence composé de :
+--
+--   SCORE_BASE = review_count + useful + funny + cool
+--             + tous les compliment_X
+--
+--   SCORE_FINAL = SCORE_BASE * (1 + SQRT(friend_count)) * (1 + SQRT(fans))
+--
+--   Affiché en plus : nb_annees_elite, derniere_annee_elite
+--   Et pour chaque user : sa review la plus useful
+-- ============================================================
+
 SELECT
-    f.user_id,
-    f.name,
-    f.review_count,
-    ROUND(f.average_stars, 2)       AS avg_stars,
-    f.useful,
-    f.fans,
-    f.nb_annees_elite,
-    f.friend_count,
-    f.derniere_annee_elite,
-    ROUND(
-        (f.useful * 2)
-        + (f.fans * 3)
-        + (f.review_count * f.average_stars)
-        + (f.nb_annees_elite * 100)
-        + (f.friend_count / 10)
-        + (CASE WHEN f.derniere_annee_elite = 2024 THEN 50 ELSE 0 END)
-    , 2) AS score_pertinence
-FROM FAIT_USER f
-WHERE f.review_count > 0
-ORDER BY score_pertinence DESC
-FETCH FIRST 100 ROWS ONLY
+    type_name               AS type_business,
+    rang,
+    user_id,
+    name                    AS nom_user,
+    ROUND(score_pertinence) AS score_pertinence,
+    -- Métriques d'activité
+    review_count,
+    useful,
+    funny,
+    cool,
+    -- Réseau social
+    friend_count            AS nb_amis,
+    fans,
+    -- Statut élite
+    nb_annees_elite,
+    derniere_annee_elite,
+    -- Qualité générale
+    average_stars,
+    -- Meilleure review
+    best_review_id,
+    best_review_business_id,
+    best_review_stars,
+    best_review_useful,
+    best_review_date
+FROM ranked
+WHERE rang <= 100;
