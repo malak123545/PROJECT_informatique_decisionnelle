@@ -1,0 +1,48 @@
+version: "3.8"
+
+# ============================================================
+# Metabase — Yelp Data Warehouse
+# Base interne : H2 embarqué
+# Oracle cible : stendhal.iem:1521/enss2025
+#
+# Commandes :
+#   Premier lancement  → docker compose up --build -d
+#   Relancer           → docker compose up -d
+#   Arrêter            → docker compose down
+#   Logs               → docker compose logs -f metabase
+# ============================================================
+
+services:
+  metabase:
+    build: .
+    container_name: metabase-yelp
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    volumes:
+      # Persistance H2 : dashboards, questions, users sauvegardés ici
+      - metabase_data:/metabase-data
+
+    environment:
+      # Base interne H2
+      MB_DB_FILE: /metabase-data/metabase.db
+
+      # Timezone française
+      JAVA_TIMEZONE: Europe/Paris
+
+      # Désactive la télémétrie Metabase
+      MB_SEND_EMAIL_ON_FIRST_LOGIN: "false"
+      MB_ANON_TRACKING_ENABLED: "false"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+volumes:
+  metabase_data:
+    driver: local
