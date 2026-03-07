@@ -1,0 +1,55 @@
+version: "3.8"
+
+# ============================================================
+# Stack complète — Yelp Dashboard
+#
+#   api            → http://localhost:8000  (FastAPI → Oracle)
+#   yelp-dashboard → http://localhost:5173  (React)
+#
+# Commandes :
+#   Premier lancement  → docker compose up --build -d
+#   Relancer           → docker compose up -d
+#   Arrêter            → docker compose down
+#   Logs API           → docker compose logs -f api
+#   Logs Dashboard     → docker compose logs -f yelp-dashboard
+# ============================================================
+
+services:
+
+  # ── API FastAPI → Oracle ──────────────────────────────────
+  api:
+    build: ./api
+    container_name: yelp-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      ORACLE_HOST:     stendhal.iem        
+      ORACLE_PORT:     "1521"
+      ORACLE_SERVICE:  enss2025
+      ORACLE_USER:     ma273150         
+      ORACLE_PASSWORD: ma273150 
+    networks:
+      - yelp-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://0.0.0.0:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Dashboard React ───────────────────────────────────────
+  yelp-dashboard:
+    build: ./yelp_dashboard
+    container_name: yelp-dashboard
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+    networks:
+      - yelp-network
+
+networks:
+  yelp-network:
+    driver: bridge
+    name: yelp-network
