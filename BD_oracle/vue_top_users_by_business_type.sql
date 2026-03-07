@@ -8,7 +8,7 @@
 --   SCORE_BASE = review_count + useful + funny + cool
 --             + tous les compliment_X
 --
---   SCORE_FINAL = SCORE_BASE * (1 + friend_count) * (1 + fans)
+--   SCORE_FINAL = SCORE_BASE * (1 + SQRT(friend_count)) * (1 + SQRT(fans))
 --
 --   Affiché en plus : nb_annees_elite, derniere_annee_elite
 --   Et pour chaque user : sa review la plus useful
@@ -47,8 +47,8 @@ user_scores AS (
             NVL(u.compliment_plain,     0) +
             NVL(u.compliment_cool,      0) +
             NVL(u.compliment_funny,     0)
-        ) * (1 + NVL(u.friend_count, 0))
-          * (1 + NVL(u.fans,         0))  AS score_pertinence
+        ) / 13
+          * (1 + (2 * SQRT(NVL(u.fans,          0)) + SQRT(NVL(u.friend_count, 0))) / 10)  AS score_pertinence
     FROM FAIT_USER u
 ),
 
