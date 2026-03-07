@@ -16,17 +16,13 @@
 
 SELECT
     state,
-    type_name                   AS type_business,
+    type_business,
     nb_business,
     avg_stars,
     total_reviews,
     avg_reviews_par_business,
     rang_meilleur,
     rang_pire,
-    CASE
-        WHEN rang_meilleur = 1 THEN 'MEILLEUR'
-        WHEN rang_pire     = 1 THEN 'PIRE'
-        ELSE '-'
-    END                         AS statut
-FROM ranked
+    statut
+FROM V_PERFORMANCE_BY_STATE
 ORDER BY state, avg_stars DESC;
