@@ -15,29 +15,24 @@
 -- ============================================================
 
 SELECT
-    type_name               AS type_business,
+    type_business,
     rang,
     user_id,
-    name                    AS nom_user,
-    ROUND(score_pertinence) AS score_pertinence,
-    -- Métriques d'activité
+    nom_user,
+    score_pertinence,
     review_count,
     useful,
     funny,
     cool,
-    -- Réseau social
-    friend_count            AS nb_amis,
+    nb_amis,
     fans,
-    -- Statut élite
     nb_annees_elite,
     derniere_annee_elite,
-    -- Qualité générale
     average_stars,
-    -- Meilleure review
     best_review_id,
     best_review_business_id,
     best_review_stars,
     best_review_useful,
     best_review_date
-FROM ranked
-WHERE rang <= 100;
+FROM V_TOP_USERS_BY_BUSINESS_TYPE
+ORDER BY type_business, rang;
