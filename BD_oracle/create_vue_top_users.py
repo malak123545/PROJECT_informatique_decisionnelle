@@ -17,18 +17,40 @@ SQL_FILE = os.path.join(os.path.dirname(__file__), "vue_top_users_by_business_ty
 
 
 def create_view(conn):
-    """Lit le fichier SQL et exécute le CREATE OR REPLACE VIEW."""
+    """Lit le fichier SQL et exécute le DROP puis le CREATE MATERIALIZED VIEW."""
     with open(SQL_FILE, "r", encoding="utf-8") as f:
-        sql = f.read()
+        content = f.read()
 
-    # Oracle n'accepte pas le point-virgule final dans execute()
-    sql = sql.strip().rstrip(";")
+    # Sépare les statements sur les lignes commençant par CREATE ou DROP
+    # et supprime les commentaires et lignes vides
+    statements = []
+    current = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("--"):
+            continue
+        if stripped.upper().startswith(("DROP ", "CREATE ")) and current:
+            statements.append("\n".join(current).strip().rstrip(";"))
+            current = []
+        current.append(line)
+    if current:
+        statements.append("\n".join(current).strip().rstrip(";"))
 
     cursor = conn.cursor()
     try:
-        cursor.execute(sql)
+        for stmt in statements:
+            if not stmt.strip():
+                continue
+            try:
+                cursor.execute(stmt)
+            except Exception as e:
+                # Ignore l'erreur si la vue n'existe pas encore au DROP
+                if "ORA-00942" in str(e) or "ORA-12003" in str(e):
+                    print(f"  (ignoré : {e})")
+                else:
+                    raise
         conn.commit()
-        print("Vue V_TOP_USERS_BY_BUSINESS_TYPE créée avec succès.")
+        print("Vue matérialisée V_TOP_USERS_BY_BUSINESS_TYPE créée avec succès.")
     except Exception as e:
         print(f"Erreur lors de la création de la vue : {e}")
         raise

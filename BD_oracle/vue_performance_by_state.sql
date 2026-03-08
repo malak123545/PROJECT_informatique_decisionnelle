@@ -44,10 +44,11 @@ states_valides AS (
     WHERE total >= 100
 ),
 
--- ── 3. Classement meilleur / pire par state ──────────────────
+-- ── 3. Classement meilleur / pire + % par state ──────────────
 ranked AS (
     SELECT
         p.*,
+        ROUND(p.nb_business * 100.0 / SUM(p.nb_business) OVER (PARTITION BY p.state), 2) AS pct_business,
         RANK() OVER (
             PARTITION BY p.state
             ORDER BY p.avg_stars DESC, p.total_reviews DESC
@@ -65,6 +66,7 @@ SELECT
     state,
     type_name                   AS type_business,
     nb_business,
+    pct_business,
     avg_stars,
     total_reviews,
     avg_reviews_par_business,
@@ -75,5 +77,4 @@ SELECT
         WHEN rang_pire     = 1 THEN 'PIRE'
         ELSE '-'
     END                         AS statut
-FROM ranked
-ORDER BY state, avg_stars DESC;
+FROM ranked;

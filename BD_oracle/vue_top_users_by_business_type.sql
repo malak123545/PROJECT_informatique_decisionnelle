@@ -13,8 +13,12 @@
 --   Affiché en plus : nb_annees_elite, derniere_annee_elite
 --   Et pour chaque user : sa review la plus useful
 -- ============================================================
-
-CREATE OR REPLACE VIEW V_TOP_USERS_BY_BUSINESS_TYPE AS
+CREATE MATERIALIZED VIEW V_TOP_USERS_BY_BUSINESS_TYPE
+BUILD IMMEDIATE
+REFRESH COMPLETE
+START WITH SYSDATE
+NEXT TRUNC(SYSDATE + 1) + 2/24
+AS
 
 WITH
 
@@ -59,6 +63,8 @@ best_review AS (
         r.user_id,
         r.review_id         AS best_review_id,
         r.business_id       AS best_review_business_id,
+        b.name              AS best_review_business_name,
+        l.city              AS best_review_city,
         r.stars             AS best_review_stars,
         r.total_useful      AS best_review_useful,
         r.date_review       AS best_review_date
@@ -71,6 +77,8 @@ best_review AS (
             ) AS rn
         FROM DIM_REVIEW r2
     ) r
+    JOIN FAIT_BUSINESS   b ON r.business_id     = b.business_id
+    JOIN DIM_LOCALISATION l ON b.localisation_id = l.localisation_id
     WHERE r.rn = 1
 ),
 
@@ -104,6 +112,8 @@ ranked AS (
         s.average_stars,
         br.best_review_id,
         br.best_review_business_id,
+        br.best_review_business_name,
+        br.best_review_city,
         br.best_review_stars,
         br.best_review_useful,
         br.best_review_date,
@@ -139,6 +149,8 @@ SELECT
     -- Meilleure review
     best_review_id,
     best_review_business_id,
+    best_review_business_name,
+    best_review_city,
     best_review_stars,
     best_review_useful,
     best_review_date
